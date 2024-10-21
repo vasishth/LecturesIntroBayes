@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+  <!-- Basic Page Needs
+  –––––––––––––––––––––––––––––––––––––––––––––––––– -->
+  <meta charset="utf-8">
+  <title>Shravan Vasishth's Intro Bayes course home page</title>
+  <meta name="description" content="">
+  <meta name="author" content="Shravan Vasishth">
+
+  <!-- Mobile Specific Metas
+  –––––––––––––––––––––––––––––––––––––––––––––––––– -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- FONT
+  –––––––––––––––––––––––––––––––––––––––––––––––––– -->
+  <link href="//fonts.googleapis.com/css?family=Raleway:400,300,600" rel="stylesheet" type="text/css">
+
+  <!-- CSS
+  –––––––––––––––––––––––––––––––––––––––––––––––––– -->
+  <link rel="stylesheet" href="css/normalize.css">
+  <link rel="stylesheet" href="css/skeleton.css">
+
+  <!-- Favicon
+  –––––––––––––––––––––––––––––––––––––––––––––––––– -->
+  <link rel="icon" type="image/png" href="images/lorikeet.jpg">
+
+</head>
+<body>
+
+
+<section>
+  <div class="container">
+
+
+<div class="column">
+
+<p>
+  <h3>Introduction to Bayesian data analysis for cognitive science
+      (<a href="bruno.nicenboim.me/bayescogsci">textbook</a>)</h3>
+
+<br>
+
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/pWow8Qe1snQ" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+
+  <h4>Video lectures by</h4>
+
+  <a href="http://www.ling.uni-potsdam.de/~vasishth/">Shravan Vasishth</a>
+  <br><br>
+
+ <h4>Source code for book</h4>
+
+ You can access the source code for the book from <a href="https://github.com/bnicenboim/bayescogsci">here</a>.
+
+
+<h4>Overview and motivation for this course</h4>
+
+ In recent years, Bayesian methods have come to be widely adopted in all areas
+ of science. This is in large part due to the development of sophisticated
+ software for probabilisic programming; a recent example is the astonishing
+ computing capability afforded by the language Stan (<a
+ href="mc-stan.org">mc-stan.org</a>). However, the underlying theory needed to
+ use this software sensibly is often inaccessible because end-users don't
+ necessarily have the statistical and mathematical background to read the
+ primary textbooks (such as Gelman et al's classic Bayesian data analysis, 3rd
+ edition). In this course, we seek to cover this gap, by providing a relatively
+ accessible and technically non-demanding introduction to the basic workflow for
+ fitting different kinds of linear models using Stan. To illustrate the
+ capability of Bayesian modeling, we will use the R package RStan and a powerful
+ front-end R package for Stan called brms.
+<br><br>
+
+<h4>Prerequisites</h4>
+
+You must have a functioning computer to do this course.<br>
+
+We also assume familiarity with R. Participants will benefit most if they have
+previously fit linear models and linear mixed models (using lme4) in R, in any
+scientific domain within linguistics and psychology. No knowledge of calculus or
+linear algebra is assumed (but will be helpful to know), but basic school level
+mathematics knowledge is assumed (this will be quickly revisited in class).
+
+<br><br>
+
+<h4>Please install the following software before watching the videos</h4>
+
+We will be using the software <a href="http://cran.r-project.org/">R</a>, and <a
+href="https://www.rstudio.com/">RStudio</a>, so make sure you install these on
+your computer. You should also install the R package <a
+href="https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started">rstan</a>;
+the R package <a href="https://github.com/paul-buerkner/brms">brms</a>.
+<strong>Please follow the installation instructions carefully</strong>.<br>
+
+Install the library bcogsci from <a href="https://github.com/bnicenboim/bcogsci">here</a>.
+<br><br>
+
+<h4>Outcomes</h4>
+
+After completing this course, the participant will have become familiar with the
+foundations of Bayesian inference using brms, and will be able to fit a range of
+multiple regression models and hierarchical models, for normally distributed
+data, and for lognormal and binomially distributed data. They will know how to
+calibrate their models using prior and posterior predictive checks.
+
+<br><br>
+
+<ol>
+  <li>Lectures on chapter 1:
+  <ol>
+    <li>Videos:<br>
+      <iframe width="560" height="315" src="https://youtu.be/vE85V7zsksc" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+  </li>
+    <li>Slides: coming soon. </li>
+   </ol>
+
+</ol>
+
+Solutions to exercises are not publicly available; they will only be provided to participants.<br>
+
+<strong>Tutorial articles</strong>
+
+Here are some articles that provide background reading, and cover some
+additional topics that we will skip:
+
+<ol>
+ <li>
+ <a href="https://econpapers.repec.org/article/jssjstsof/v_3a080_3ai01.htm">brms tutorial by the author of the package, Paul Buerkner.</a>
+<li><a href="https://psyarxiv.com/x8swp/">Ordinal regression models in psychological research: A tutorial, by Buerkner and Vuorre.</a></li>
+<li>
+ <a href="https://arxiv.org/abs/1807.10451">Contrast coding tutorial, by Schad, Hohenstein, Vasishth, Kliegl.</a>
+</li>
+  <li>
+ <a href="https://osf.io/b2vx9/">Bayesian workflow tutorial, by Schad, Betancourt, Vasishth</a>.
+</li>
+  <li>
+ <a href="http://www.tqmp.org/RegularArticles/vol12-3/p175/p175.pdf">Linear mixed models tutorial, Sorensen, Hohenstein, Vasishth.</a>
+</li>
+  <li>
+ <a href="https://osf.io/g4zpv/">brms tutorial for phonetics/phonology, Vasishth, Nicenboim, Beckman, Li, Kong.</a>
+</li>
+<li><a href="https://arxiv.org/abs/2103.08744">Workflow Techniques for the Robust Use of Bayes Factors</a> by Daniel J. Schad, Bruno Nicenboim, Paul-Christian Bürkner, Michael Betancourt, Shravan Vasishth.</li>
+<li><a href="https://psyarxiv.com/u8yvc">Sample size determination for Bayesian hierarchical models commonly used in psycholinguistics</a>.
+Shravan Vasishth, Himanshu Yadav, Daniel Schad, and Bruno Nicenboim.
+Submitted to Computational Brain and Behavior, 2021.</li>
+<li><a href="https://betanalpha.github.io/writing/">Michael Betancourt's resources</a>: These are a must if you want to get deeper into Stan and Bayesian modeling.</li>
+<li><a href="https://chi-feng.github.io/mcmc-demo/app.html">MCMC animations/visualizations</a>,<a href="http://elevanth.org/blog/2017/11/28/build-a-better-markov-chain/">McElreath's blog post on MCMC</a></li>
+
+</ol>
+
+<strong>Some example articles from our lab and other groups that use Bayesian methods</strong>
+
+A frequently asked question is: how to summarize the results of a Bayesian
+analysis? Here are some examples of articles we have published using Bayesian
+data analysis. Our presentation of results is continuously evolving; there is no
+fixed answer to the question, how should I display my results? Use your
+judgement. The most important thing you can do to facilitate understanding of
+your work is to be open and transparent about your analyses. This means
+releasing all data and code with the published paper. We will be providing some
+guidelines on how to do this, in the summer school course.
+
+<ol>
+<li>
+ <a href="https://osf.io/g5ndw/">Example random-effects meta-analysis.</a>
+</li>
+  <li>
+ <a href="https://mc-stan.org/events/stancon2017-notebooks/stancon2017-nicenboim-vasishth-retrieval-models.html">Example of finite mixture models using Stan.</a>
+</li>
+<li><a href="https://osf.io/eyphj/">Replication attempt of a published study.</a></li>
+<li><a href="https://osf.io/mmr7s/">Bayesian analysis of relatively large-sample psycholinguistic experiment.</a></li>
+<li><a href="https://avehtari.github.io/RAOS-Examples/">Examples of regression analyses by Vehtari and colleagues</a></li>
+</ol>
+
+</p>
+</div>
+</div>
+
+</section>
+</body>
+</html>
