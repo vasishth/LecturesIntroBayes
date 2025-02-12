@@ -1,0 +1,1010 @@
+---
+title: "Chapter 1: Foundations"
+author: "Shravan Vasishth"
+date: "https://bruno.nicenboim.me/bayescogsci/"
+output: 
+  pdf_document
+toc: true
+fontsize: 12pt
+geometry: "a4paper,right=8.5cm,left=1cm,bottom=2cm,top=2cm"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+\Large
+
+\newpage
+
+# Textbook
+
+Introduction to Bayesian Data Analysis for Cognitive Science
+
+Nicenboim, Schad, Vasishth
+
+https://bruno.nicenboim.me/bayescogsci/
+
+# Discrete random variables
+
+A random variable $X$ is a function $X : \Omega \rightarrow \mathbb{R}$ that associates to each outcome $\omega \in \Omega$ exactly one number $X(\omega) = x$.
+
+$S_X$ is all the $x$'s (all the possible values of X, the **support of X**). I.e., $x \in S_X$. We can also sloppily write $X \in S_X$. 
+
+## An example of a discrete RV
+
+An example of a discrete random variable: keep tossing a coin again and again until you get a Heads.
+
+- $X: \omega \rightarrow x$
+- $\omega$: H, TH, TTH,\dots (infinite)
+- $X(H)=1, X(TH)=2, X(TTH)=3$, \dots  
+- $x=1,2,\dots; x \in S_X$
+
+A second example of a discrete random variable: tossing a coin once.
+
+- $X: \omega \rightarrow x$
+- $\omega$: H, T
+- $X(T)=0, X(H)=1$
+- $x=0,1; x \in S_X$
+
+Every discrete (continuous) random variable X has associated with it a 
+**probability mass (density)  function (PMD, PDF)**. 
+
+- PMF is used for discrete distributions and PDF for continuous. 
+- (Some books use PDF for both discrete and continuous distributions.)
+
+Thinking just about discrete random variables for now:
+
+\begin{equation}
+p_X : S_X \rightarrow [0, 1] 
+\end{equation}
+
+defined by
+
+\begin{equation}
+p_X(x) = \hbox{Prob}(X(\omega) = x), x \in S_X
+ \end{equation}
+
+Example of a PMF: a random variable $X$ representing tossing a coin once.
+
+- In the case of a fair coin, $x$ can be $0$ or $1$, and the probability of each possible event (each event is a subset of the set of possible outcomes) is $0.5$.
+- Formally: $p_X(x) = \hbox{Prob}(X(\omega) = x), x \in S_X$
+- The probability mass function defines the probability of each event:
+$p_X(0) = p_X(1) =0.5$.
+- The \textbf{cumulative distribution function} (CDF) $F(X\leq x)$ gives the cumulative probability of observing all the events $X\leq x$. 
+
+\begin{equation}
+\begin{split}
+F(x=1) & = \hbox{Prob}(X \leq 1)\\
+       & = \sum_{x=0}^{1} p_X(x) \\
+       & = p_X(x=0) + p_X(x=1) \\
+       & =  1
+\end{split}
+\end{equation}
+
+\begin{equation}
+\begin{split}
+F(x=0) & = \hbox{Prob}(X \leq 0)\\
+& = \sum_{x=0}^{0} p_X(x)\\
+& = p_X(x=0) \\
+& = 0.5
+\end{split}
+\end{equation}
+
+
+
+Simulate tossing a coin ten times, with probability (which I call $\theta$ below) of heads 0.5:
+
+```{r}
+extraDistr::rbern(n = 10, prob = 0.5)
+```
+
+The probability mass function: Bernoulli 
+
+$$p_X(x)= \theta^x (1-\theta)^{(1-x)}$$
+
+where x can have values 0, 1.
+
+What's the probability of a tails/heads? The d-family of functions:
+
+```{r}
+extraDistr::dbern(0, prob = 0.5)
+extraDistr::dbern(1, prob = 0.5)
+```
+
+Notice that these probabilities sum to 1.
+
+
+The cumulative probability distribution function: the p-family of functions: 
+
+$$F(x=1) = Prob(X \leq 1) = \sum_{x=0}^{1} p_X(x) = 1$$
+
+```{r}
+extraDistr::pbern(1, prob = 0.5)
+```
+
+$$F(x=0) = Prob(X \leq 0) = \sum_{x=0}^{0} p_X(x) = 0.5$$
+
+```{r}
+extraDistr::pbern(0, prob = 0.5)
+```
+
+## Another example: The binomial
+
+- Consider tossing a coin 10 times (number of trials, `size` in R). 
+- When number of trials (size) is 1, we have a Bernoulli; when we have size greater than 1, we have a Binomial.
+
+
+$$\theta^{x}(1-\theta)^{1-x}$$ where $$S_x=\{0,1\}$$
+
+**Binomial PMF**
+
+$${n \choose x} \theta^{x}(1-\theta)^{n-x}$$ 
+
+where $$S_x=\{0,1,\dots,n\}$$
+
+- $n$ is the number of times the coin was tossed (the number of trials; size in R).
+- ${n \choose x}$ is the number of ways that you can get $x$ successes in $n$ trials.
+
+```{r}
+choose(10, 2)
+```
+- $\theta$ is the probability of success in $n$ trials.
+
+
+```{r echo=FALSE,message=FALSE}
+library(ggplot2)
+library(tidyverse)
+ggplot(tibble(x = c(0, 10)), aes(x)) +
+  stat_function(
+    fun = dbinom, geom = "col",
+    args = list(size = 10, prob = 0.5), n = 11
+  ) +
+  xlab("Possible events") +
+  ylab("Probability") +
+  ggtitle(expression(paste(theta, " = 0.5", sep = ""))) +
+  scale_x_continuous(breaks = 0:10) +
+  theme_bw()
+```
+
+```{r echo=FALSE,message=FALSE}
+ggplot(tibble(x = c(0, 10)), aes(x)) +
+  stat_function(
+    fun = dbinom, geom = "col",
+    args = list(size = 10, prob = 0.1), n = 11
+  ) +
+  xlab("Possible events") +
+  ylab("Probability") +
+  ggtitle(expression(paste(theta, " = 0.1", sep = ""))) +
+  scale_x_continuous(breaks = 0:10) +
+  theme_bw()
+```
+
+```{r echo=FALSE,message=FALSE}
+ggplot(tibble(x = c(0, 10)), aes(x)) +
+  stat_function(
+    fun = dbinom, geom = "col",
+    args = list(size = 10, prob = 0.9), n = 11
+  ) +
+  xlab("Possible events") +
+  ylab("Probability") +
+  ggtitle(expression(paste(theta, " = 0.9", sep = ""))) +
+  scale_x_continuous(breaks = 0:10) +
+  theme_bw()
+```
+
+## Four critical R functions
+
+**1. Generate random data**
+
+n: number of experiments done (\textbf{Note}: we used n for trials above)
+
+size: the number of times the coin was tossed in each experiment
+
+```{r}
+rbinom(n = 10, size = 1, prob = 0.5)
+## equivalent to: rbern(10,0.5)
+```
+
+Compare: 
+
+```{r}
+rbinom(n = 10, size = 10, prob = 0.5)
+```
+
+**2. Compute probabilities of particular events (0,1,\dots,10 successes when n=10)**
+
+```{r}
+probs <- round(dbinom(0:10, size = 10, 
+                      prob = 0.5), 3)
+x <- 0:10
+```
+
+```{r echo=FALSE}
+(probs_df<-data.frame(x,probs))
+```
+
+**3. Compute cumulative probabilities**
+
+```{r echo=FALSE}
+#round(pbinom(0:10, size = 10, prob = 0.5),3)
+```
+
+
+```{r echo=FALSE,message=FALSE}
+ggplot(tibble(q = c(0, 10)), aes(q)) +
+  stat_function(
+    fun = pbinom, geom = "col",
+    args = list(size = 10, prob = 0.5), n = 11
+  ) +
+  xlab("Possible events k") +
+  ylab("Prob(X<=k)") +
+  ggtitle("Cumulative distribution function") +
+  scale_x_continuous(breaks = 0:10) +
+  theme_bw()
+```
+
+**4. Compute quantiles using the inverse of the CDF**
+
+```{r}
+probs <- pbinom(0:10, size = 10, prob = 0.5)
+qbinom(probs, size = 10, prob = 0.5)
+```
+
+
+```{r echo=FALSE,message=FALSE}
+probs <- seq(0, 1, by = 0.01)
+invcdf <- data.frame(
+  probs = probs,
+  q = qbinom(probs,
+    size = 10,
+    prob = 0.5
+  )
+)
+
+ggplot(invcdf, aes(
+  x = probs,
+  y = q
+)) +
+  geom_line() +
+  xlim(0, 1) +
+  xlab("probability") +
+  ylab("quantile") +
+  ggtitle("Inverse CDF,  binomial(size=10,prob=0.5)") +
+  scale_y_continuous(breaks = seq(0, 10, by = 1)) +
+  theme_bw()
+```
+
+# Continuous random variables
+
+In coin tosses, H and T are discrete possible outcomes.
+
+- By contrast, variables like reading times range from 0 milliseconds up--these are **continuous variables**.
+- Continuous random variables have a probability **density** function (PDF) $f(\cdot)$ associated with them. (cf. PMF in discrete RVs)
+- The expression 
+
+\begin{equation}
+ X \sim f(\cdot)
+\end{equation}
+
+means that the random variable $X$ has PDF $f(\cdot)$. For example, if we say that $X\sim Normal(\mu,\sigma)$, we are assuming that the PDF is
+
+\begin{equation}
+f(x\mid \mu, \sigma)= \frac{1}{\sqrt{2\pi \sigma^2}} \exp\left[-\frac{(x-\mu)^2}{2\sigma^2}\right]
+\end{equation}
+
+where $-\infty<x<+\infty$
+
+## The normal random variable
+
+The PDF below is associated with the normal distribution that you are probably familiar with:
+
+\begin{equation}
+f(x\mid \mu, \sigma)= \frac{1}{\sqrt{2\pi \sigma^2}} \exp\left[-\frac{(x-\mu)^2}{2\sigma^2}\right] 
+\end{equation}
+
+where  $-\infty<x<+\infty$.
+
+- The support of $X$, i.e., the elements of $S_X$, has values ranging from $-\infty$ to $+\infty$ (we can **truncate** the normal to have finite values---this comes later)
+- $\mu$ is the location parameter (here, mean)
+- $\sigma$ is the scale parameter (here, standard deviation)
+
+
+In the discrete RV case, we could compute the probability of a \textbf{particular} event occurring:
+
+```{r}
+extraDistr::dbern(x = 1, prob = 0.5)
+dbinom(x = 2, size = 10, prob = 0.5)
+```
+
+- In a continuous distribution, probability is defined as the **area under the curve**.
+- As a consequence, for any particular **point** value $x$, where $X\sim Normal(\mu,\sigma)$, it is always the case that $\hbox{Prob}(X=x) = 0$.
+- In any continuous distribution, we can compute probabilities like $\hbox{Prob}(x_1<X<x_2) = ?$, where $x_1<x_2$ by summing up the \textbf{area under the curve}.
+- To compute probabilities like $\hbox{Prob}(x_1<X<x_2) = ?$, we need the cumulative distribution function.
+
+The cumulative distribution function (CDF) is
+
+\begin{equation}
+P(X<u) = F(X<u) =\int_{-\infty}^{u} f(x)\, dx
+\end{equation}
+
+- The integral sign $\int$ is just the summation symbol in continuous space.
+- Recall the summation in the CDF of the Bernoulli!
+
+## The standard normal distribution
+
+In the $Normal(\mu=0,\sigma=1)$,
+
+- Prob$(-1<X<+1) = 0.68$
+- Prob$(-2<X<+2) = 0.95$
+- Prob$(-3<X<+3) = 0.997$
+
+```{r echo=FALSE}
+# draw the normal curve
+curve(dnorm(x, 0, 1), xlim = c(-3, 3), main = "Normal density")
+
+# define shaded region
+from.z <- -1
+to.z <- 1
+
+S.x <- c(from.z, seq(from.z, to.z, 0.01), to.z)
+S.y <- c(0, dnorm(seq(from.z, to.z, 0.01)), 0)
+polygon(S.x, S.y, col = rgb(1, 0, 0, 0.3))
+text(-0.7, 0.15, pos = 4, cex = 3.5, expression(paste("68%")))
+```
+
+```{r, echo=FALSE}
+# draw the normal curve
+# draw the normal curve
+curve(dnorm(x, 0, 1), xlim = c(-3, 3), main = "Normal density")
+
+# define shaded region
+from.z <- -2
+to.z <- 2
+
+S.x <- c(from.z, seq(from.z, to.z, 0.01), to.z)
+S.y <- c(0, dnorm(seq(from.z, to.z, 0.01)), 0)
+polygon(S.x, S.y, col = rgb(0, 0, 1, 0.3))
+text(-0.7, 0.15, pos = 4, cex = 3.5, expression(paste("95%")))
+```
+
+```{r echo=FALSE}
+# draw the normal curve
+# draw the normal curve
+curve(dnorm(x, 0, 1), xlim = c(-3, 3), main = "Normal density")
+
+# define shaded region
+from.z <- -3
+to.z <- 3
+
+S.x <- c(from.z, seq(from.z, to.z, 0.01), to.z)
+S.y <- c(0, dnorm(seq(from.z, to.z, 0.01)), 0)
+polygon(S.x, S.y, col = rgb(0, 0, 0, 0.3))
+text(-1, 0.15, pos = 4, cex = 3.5, expression(paste("99.7%")))
+```
+
+More generally, for any $Normal(\mu,\sigma)$,
+
+- Prob$(-1\times \sigma <X<+1\times \sigma) = 0.68$
+- Prob$(-2\times \sigma <X<+2\times \sigma) = 0.95$
+- Prob$(-3\times \sigma<X<+3\times \sigma) = 0.997$
+
+## The normalizing constant and the kernel
+
+This part of $f(x\mid \mu,\sigma)$ (call it $g(x)$) is  the ``kernel'' of the normal PDF:
+
+\begin{equation}
+g(x\mid \mu, \sigma) = \exp\left[-\frac{(x-\mu)^2}{2 \sigma^2}\right]
+\end{equation}
+
+For the above function, the area under the curve doesn't sum to 1:
+
+Sum up the area under the curve $\int g(x)\, dx$:
+
+```{r}
+normkernel <- function(x, mu = 0, sigma = 1) {
+  exp((-(x - mu)^2 / (2 * (sigma^2))))
+}
+
+integrate(normkernel, lower = -Inf, upper = +Inf)
+```
+
+The shape doesn't change of course:
+
+```{r echo=FALSE}
+x <- seq(-10, 10, by = 0.01)
+
+plot(function(x) normkernel(x), -3, 3,
+  main = "Normal density kernel", ylim = c(0, 1),
+  ylab = "density", xlab = "X"
+)
+```
+
+```{r echo=FALSE}
+x <- seq(-10, 10, by = 0.01)
+
+plot(function(x) dnorm(x), -3, 3,
+  main = "Normal density", ylim = c(0, 0.5),
+  ylab = "density", xlab = "X"
+)
+```
+
+In simple examples like the one shown here, given the kernel of some PDF like $g(x)$, we can figure out the normalizing constant by solving for $k$ in:
+
+\begin{equation}
+k \int g(x)\, dx = 1
+\end{equation}
+
+Solving for $k$ just amounts to computing:
+
+\begin{equation}
+k  = \frac{1}{\int g(x)\, dx}
+\end{equation}
+
+We will see the practical implication of this when we move on to chapter 2 of the textbook.
+
+## The four key functions for the normal distribution
+
+Recall these key functions for the Bernoulli:
+
+```{r}
+extraDistr::rbern(10, prob = 0.5)
+extraDistr::dbern(x = 1, prob = 0.5)
+extraDistr::pbern(q = 1, prob = 0.5)
+extraDistr::qbern(p = 1, prob = 0.5)
+```
+
+For the binomial:
+
+```{r}
+rbinom(1, size = 10, prob = 0.5)
+dbinom(x = 2, size = 10, prob = 0.5)
+pbinom(q = 2, size = 10, prob = 0.5)
+qbinom(p = 0.0546875, size = 10, prob = 0.5)
+```
+
+In the continuous case, we also have this family of d-p-q-r functions. In the normal distribution:
+
+**1. Generate random data using rnorm**
+
+```{r}
+round(rnorm(5, mean = 0, sd = 1),3)
+```
+
+For the standard normal, mean=0, and sd=1 can be omitted (these are the default values in R).
+
+```{r}
+round(rnorm(5),3)
+```
+
+
+**2. Compute probabilities using CDF: pnorm**
+
+Some examples of usage:
+
+- $\hbox{Prob}(X<2)$ (e.g., in $X\sim Normal(0,1)$)
+
+```{r}
+pnorm(2)
+```
+
+- $\hbox{Prob}(X>2)$ (e.g., in $X\sim Normal(0,1)$)
+
+```{r}
+pnorm(2, lower.tail = FALSE)
+```
+
+
+
+**3. Compute quantiles: qnorm**
+
+```{r}
+qnorm(0.9772499)
+```
+
+
+**4. Compute the probability density: dnorm**
+
+```{r}
+dnorm(2)
+```
+
+**Note**: In the continuous case, this is a **density**, the value $f(x)$, not a probability. Cf. the discrete examples dbern and dbinom, which give probabilities of a point value  $x$.
+
+```{r echo=FALSE}
+curve(dnorm(x, 0, 1),
+  xlim = c(-3, 3), main = "Normal(0,1)",
+  ylab = "density"
+)
+from.z <- -1
+to.z <- 1
+
+S.x <- c(from.z, seq(from.z, to.z, 0.01), to.z)
+S.y <- c(0, dnorm(seq(from.z, to.z, 0.01)), 0)
+polygon(S.x, S.y, col = rgb(1, 0, 0, 0.3))
+text(-2, 0.15, pos = 4, cex = 1.5, paste("pnorm(1)-pnorm(-1)"))
+arrows(x1 = 2, y1 = 0.3, x0 = 1, y0 = dnorm(1), code = 1)
+text(1.7, 0.32, pos = 4, cex = 1.5, paste("dnorm(1)"))
+points(1, dnorm(1))
+# points(1,0)
+arrows(x1 = 2, y1 = 0.1, x0 = 1, y0 = 0, code = 1)
+text(1, 0.12, pos = 4, cex = 1.5, paste("qnorm(0.841)"))
+x <- rnorm(10)
+points(x = x, y = rep(0, 10), pch = 17)
+text(-3, 0.05, pos = 4, cex = 1.5, paste("rnorm(10)"))
+arrows(x1 = -2.5, y1 = 0.03, x0 = min(x), y0 = 0, code = 1)
+```
+
+```{r echo=FALSE}
+ggplot(tibble(x = c(200, 900)), aes(x)) +
+  stat_function(
+    fun = dnorm,
+    args = list(mean = 500, sd = 100)
+  ) +
+  xlab("x") +
+  ylab("density") +
+  ggtitle("PDF of Normal(mean=500,sd=100)") +
+  theme_bw()
+```
+
+```{r echo=FALSE}
+ggplot(tibble(x = c(200, 900)), aes(x)) +
+  stat_function(
+    fun = pnorm,
+    args = list(mean = 500, sd = 100)
+  ) +
+  xlab("x") +
+  ylab("Probability") +
+  ggtitle("CDF of Normal(mean=500,sd=100)") +
+  theme_bw()
+```
+
+
+```{r echo=FALSE}
+ggplot(tibble(y = c(0, 1)), aes(y)) +
+  stat_function(
+    fun = qnorm,
+    args = list(mean = 500, sd = 100)
+  ) +
+  xlab("Probability") +
+  ylab("x") +
+  ggtitle("Inverse CDF of Normal(mean=500,sd=100)") +
+  theme_bw()
+```
+
+
+# The expectation and variance of an RV
+
+The expectation of a discrete random variable $Y$ with probability mass function f(y), is defined as
+
+\begin{equation}
+E[Y] = \sum_y y \cdot f(y)
+\end{equation}
+
+**Example**: Toss a fair coin once. The possible events are Tails (represented as 0) and Heads (represented as 1), each with equal probability, 0.5. The expectation is: 
+
+\begin{equation}
+E[Y] = \sum_y y \cdot f(y) = 0\cdot 0.5 + 1\cdot 0.5 = 0.5 
+\end{equation}
+
+
+The variance is defined as:
+
+\begin{equation}
+Var(Y) = E[Y^2]-E[Y]^2
+\end{equation}
+
+In the **binomial**, $Y \sim {n \choose k} \theta^k (1-\theta)^{n-k}$:
+
+- The expectation: $E[Y] = n\theta$ 
+  - Estimated by $\hat\theta = \frac{k}{n}$
+- The variance: $Var(Y) = n\theta (1-\theta)$
+  - Estimated by $Var(y) = n\hat\theta (1-\hat\theta)$
+
+In the **normal**, $Y\sim Normal(\mu,\sigma)$:
+
+- The expectation: $E[Y] = \int y f(y)\, dy = \mu$ 
+  - Estimated by  $\hat\mu = \bar{y}=\frac{\sum y}{n}$
+- The variance: $Var(Y) = \sigma^2$
+  - Estimated by $\hat\sigma^2  = \frac{\sum (y_i-\bar{y})^2}{n-1}$
+
+# The likelihood function (Binomial)
+
+The **likelihood function** refers to the PMF  $p(k|n,\theta)$, treated as a function of $\theta$. 
+
+For example, suppose that we record $n=10$ trials, and observe $k=7$ successes. The likelihood function is:
+
+\begin{equation}
+\mathcal{L}(\theta|k=7,n=10)=
+\binom{10}{7} \theta^{7} (1-\theta)^{10-7}
+\end{equation}
+
+If we now plot the likelihood function for all possible values of $\theta$ ranging from $0$ to $1$, we get the plot shown below.
+
+```{r echo=FALSE}
+ggplot(tibble(prob = c(0, 1)), aes(prob)) +
+  stat_function(
+    fun = dbinom,
+    args = list(x = 7, size = 10)
+  ) +
+  xlab("theta") +
+  ylab("Likelihood") +
+  geom_vline(xintercept = .7, linetype = "dashed") +
+  annotate("text", x = .55, y = .05, label = "Max. value at: \n 0.7") +
+  ggtitle("Likelihood function") +
+  theme_bw()
+```
+
+The MLE (**from a particular sample** of data need not invariably give us an accurate estimate of $\theta$. 
+
+```{r echo=FALSE}
+n <- c(seq(10, 100, by = 1), seq(100, 1000, by = 10), seq(1000, 10000, by = 50), seq(10000, 100000, by = 100))
+mean_store <- rep(NA, length(n))
+for (i in 1:length(n)) {
+  y <- rbinom(n[i], size = 1, prob = 0.7)
+  mean_store[i] <- mean(y)
+}
+
+mle <- data.frame(n = n, mean_store = mean_store)
+
+ggplot(mle, aes(x = n, y = mean_store)) +
+  # geom_line() +
+  geom_point() +
+  scale_x_log10() +
+  ylim(0, 1) +
+  xlab("sample size n (log scale)") +
+  ylab("estimate") +
+  geom_hline(yintercept = 0.7) +
+  ggtitle("The MLE  as a function of sample size (funnel plot)") +
+  theme_bw()
+```
+
+# The likelihood function (Normal)
+
+
+\begin{equation}
+\mathcal{L}(\mu,\sigma|x)=Normal(x,\mu,\sigma)
+\end{equation}
+
+```{r}
+## the data:
+x<-0
+## the likelihood under different values 
+## of mu and sigma:
+dnorm(x,mean=0,sd=1)
+dnorm(x,mean=10,sd=1)
+dnorm(x,mean=0,sd=10)
+dnorm(x,mean=10,sd=10)
+```
+
+Assuming that $\sigma=1$, the likelihood function of $\mu$:
+
+```{r echo=FALSE}
+x<-0
+muvals<-seq(-4,4,by=0.01)
+plot(muvals,dnorm(0,mean=muvals,sd=1),
+     type="l",ylab="Density")
+abline(v=0)
+```
+
+If we have two independent data points, the joint likelihood for two arbitrary values of $\mu$ and $\sigma$:
+
+```{r}
+x1<-0
+x2<-1.5
+dnorm(x1,mean=0,sd=1) * 
+  dnorm(x2,mean=0,sd=1) 
+## log likelihood:
+dnorm(x1,mean=0,sd=1,log=TRUE) + 
+  dnorm(x2,mean=0,sd=1,log=TRUE) 
+## more compactly:
+x<-c(x1,x2)
+sum(dnorm(x,mean=0,sd=1,log=TRUE))
+```
+
+One practical implication: one can use the log likelihood to 
+compare competing models' fit:
+
+```{r}
+## Model 1:
+sum(dnorm(x,mean=0,sd=1,log=TRUE))
+## Model 2:
+sum(dnorm(x,mean=10,sd=1,log=TRUE))
+```
+
+
+More generally, for independent and identically distributed data $x=x_1,\dots,x_n$:
+
+\begin{equation}
+\mathcal{L}(\mu,\sigma|x) = \prod_{i=1}^n Normal(x_i,\mu,\sigma)
+\end{equation}
+
+or
+
+\begin{equation}
+\ell (\mu,\sigma|x) = \sum_{i=1}^n log(Normal(x_i,\mu,\sigma))
+\end{equation}
+
+# Bivariate/multivariate distributions
+
+```{r echo=FALSE}
+library(bcogsci)
+```
+
+Data from: Laurinavichyute, A. (2020). Similarity-based interference and faulty encoding accounts of sentence processing. dissertation, University of Potsdam.
+
+X: Likert ratings 1-7.
+
+Y: 0, 1 accuracy responses.
+
+```{r echo=FALSE}
+data("df_discreteagrmt")
+rating0 <- df_discreteagrmt %>%
+  filter(accuracy == 0) %>%
+  count(rating) %>%
+  pull(n)
+rating1 <- df_discreteagrmt %>%
+  filter(accuracy == 1) %>%
+  count(rating) %>%
+  pull(n)
+ratingsbivar <- tibble(`0` = rating0, `1` = rating1)
+## function from the bivariate package:
+bivariate::gbvpmf(as.matrix(ratingsbivar)) %>%
+  plot(arrows = FALSE)
+
+rating0 <- df_discreteagrmt %>%
+  filter(accuracy == 0) %>%
+  count(rating) %>%
+  pull(n)
+rating1 <- df_discreteagrmt %>%
+  filter(accuracy == 1) %>%
+  count(rating) %>%
+  pull(n)
+ratingsbivar <- tibble(`0` = rating0, `1` = rating1)
+## function from the bivariate package:
+bivariate::gbvpmf(as.matrix(ratingsbivar)) %>%
+  plot(arrows = FALSE)
+
+probs <- t(attr(bivariate::gbvpmf(as.matrix(ratingsbivar)), "p"))
+colnames(probs) <- paste("x=", 1:7, sep = "")
+rownames(probs) <- paste("y=", 0:1, sep = "")
+```
+
+The joint PMF: $p_{X,Y}(x,y)$
+
+\tiny
+
+```{r echo=FALSE}
+probs_f <- probs %>%
+  apply(2, function(.x) paste0("$", round(.x, 3), "$"))
+colnames(probs_f) <- paste0("$", colnames(probs), "$")
+rownames(probs_f) <- paste0("$", rownames(probs), "$")
+kableExtra::kable(probs_f,
+  digits = 3,
+  escape = FALSE,
+  format = "latex",
+  caption = "The joint PMF for two random variables X and Y."
+)
+```
+
+
+\Large
+For each possible pair of values of X and Y, we have a **joint probability mass function** $p_{X,Y}(x,y)$.
+
+Two useful quantities that we can compute:
+
+**The marginal distributions ($p_{X}$ and $p_Y$)**: 
+
+\begin{equation}
+p_{X}(x)=\sum_{y\in S_{Y}}p_{X,Y}(x,y).\label{eq-marginal-pmf2}
+\end{equation}	
+
+\begin{equation}
+p_{Y}(y)=\sum_{x\in S_{X}}p_{X,Y}(x,y).\label{eq-marginal-pmf}
+\end{equation}	
+
+
+\tiny
+
+```{r echo=FALSE}
+# P(Y)
+PY <- rowSums(probs)
+# P(X)
+PX <- colSums(probs)
+probs_f <- probs %>%
+  apply(2, function(.x) paste0("$", round(.x, 3), "$"))
+
+## probs <- round(probs,3)
+## rownames(probs)[3]<-"P(X)"
+## colnames(probs)[8]<-"P(Y)"
+
+probs_f <- rbind(probs_f, paste0("$", round(PX, 3), "$"))
+probs_f <- cbind(probs_f, c(paste0("$", round(PY, 3), "$"), ""))
+colnames(probs_f) <- paste0("$", c(colnames(probs), "p(Y)"), "$")
+rownames(probs_f) <- paste0("$", c(rownames(probs), "p(X)"), "$")
+
+kableExtra::kable(probs_f,
+  escape = FALSE,
+  digits = 3, booktabs = TRUE,
+  vline = "", # format="latex",
+  caption = "The joint PMF for two random variables X and Y, along with the marginal distributions of X and Y."
+)
+```  
+
+\Large
+
+
+```{r echo=FALSE}
+op <- par(mfrow = c(1, 2), pty = "s")
+barplot(PX, main = "p(X)")
+barplot(PY, main = "p(Y)")
+```
+
+**The conditional distributions ($p_{X|Y}$ and $p_{Y|X}$)**
+
+\begin{equation}
+p_{X\mid Y}(x\mid y) = \frac{p_{X,Y}(x,y)}{p_Y(y)}	
+\end{equation}
+
+and 
+
+\begin{equation}
+p_{Y\mid X}(y\mid x) = \frac{p_{X,Y}(x,y)}{p_X(x)}	
+\end{equation}
+
+
+Let's do the calculation for $p_{X\mid Y}(x\mid y=0)$.
+
+\tiny
+
+```{r echo=FALSE}
+kableExtra::kable(probs_f,
+  escape = FALSE,
+  digits = 3, booktabs = TRUE,
+  vline = "", # format="latex",
+  caption = "The joint PMF for two random variables X and Y, along with the marginal distributions of X and Y."
+)
+```
+
+\Large
+
+\begin{equation}
+\begin{split}
+p_{X\mid Y} (1\mid 0) =& \frac{p_{X,Y}(1,0)}{p_Y(0)}\\
+	=&  \frac{0.018}{0.291}\\
+	=& `r round(0.018/0.291,3)`
+\end{split}	
+\end{equation}
+
+```{r echo=FALSE, results="asis",eval=FALSE}
+y0 <- c("$0.062$", rep("", 6))
+y1 <- rep("", 7)
+conddistrn <- rbind(y0, y1)
+colnames(conddistrn) <- paste("$x=", 1:7, "$", sep = "")
+rownames(conddistrn) <- c("$p_{X|Y(x|y=0)}$", "$p_{X|Y(x|y=1)}$")
+
+kableExtra::kable(conddistrn,
+  digits = 3, booktabs = TRUE,
+  escape = FALSE,
+  vline = "", # format="latex",
+  caption = "A table for listing conditional distributions of X given Y."
+)
+```
+
+
+Next, we turn to continuous bivariate/multivariate distributions.
+
+The variance-covariance matrix:
+
+\begin{equation}\label{eq:covmatfoundations}
+\Sigma
+=
+\begin{pmatrix}
+\sigma _{X}^2  & \rho_{XY}\sigma _{X}\sigma _{Y}\\
+\rho_{XY}\sigma _{X}\sigma _{Y}    & \sigma _{Y}^2\\
+\end{pmatrix}
+\end{equation}
+
+The off-diagonals of this matrix contain the covariance between  $X$ and $Y$:
+
+$$Cov(X,Y) = \rho_{XY}\sigma _{X}\sigma _{Y}$$ 
+
+The joint distribution of $X$ and $Y$ is defined as follows:
+
+\begin{equation}\label{eq:jointpriordistfoundations}
+\begin{pmatrix}
+  X \\ 
+  Y \\
+\end{pmatrix}
+\sim 
+\mathcal{N}_2 \left(
+\begin{pmatrix}
+  0 \\
+  0 \\
+\end{pmatrix},
+\Sigma
+\right)
+\end{equation}
+
+The joint PDF has the property that the volume under the curve sums to 1.
+
+Formally, we would write the volume under the curve as a double integral: we are summing up the volume under the curve for both $X$ and $Y$ (hence the two integrals).
+
+\begin{equation}
+\iint_{S_{X,Y}} f_{X,Y}(x,y)\, dx dy = 1
+\end{equation}
+
+
+Here, the terms $dx$ and $dy$ express the fact that we are computing the volume under the curve along the $X$ axis and the $Y$ axis.
+
+The joint CDF would be written as follows. The equation below gives us the probability of observing a value like $(u,v)$ or some value smaller than that (i.e., some $(u',v')$, such that $u'<u$ and $v'<v$).
+
+\begin{equation}
+\begin{split}
+F_{X,Y}(u,v) =& \hbox{Prob}(X<u,Y<v)\\
+             =& \int_{-\infty}^u \int_{-\infty}^v f_{X,Y}(x,y)\, dy dx \\
+             ~& \hbox{ for } (x,y) \in \mathbb{R}^2\\
+\end{split}
+\end{equation}
+
+
+Just as in the discrete case, the marginal distributions can be derived by marginalizing out the other random variable:
+
+\begin{equation}
+f_X(x) = \int_{S_Y} f_{X,Y}(x,y)\, dy \quad f_Y(y) = \int_{S_X} f_{X,Y}(x,y)\, dx
+\end{equation}
+
+Here, $S_X$ and $S_Y$ are the respective supports.
+
+```{r echo=FALSE, fig.caption="No correlation"}
+f1 <- bivariate::nbvpdf(0, 0, 1, 1, 0)
+# f1 %$% matrix.variances
+plot(f1,
+  all = TRUE, n = 20,
+  main = "No correlation"
+)
+```
+
+```{r echo=FALSE}
+f3 <- bivariate::nbvpdf(0, 0, 1, 1, -0.6)
+# f1 %$% matrix.variances
+plot(f3,
+  all = TRUE, n = 20,
+  main = "Correlation -0.6"
+)
+```
+
+```{r echo=FALSE}
+f2 <- bivariate::nbvpdf(0, 0, 1, 1, 0.6)
+# f1 %$% matrix.variances
+plot(f2,
+  all = TRUE, n = 20,
+  main = "Correlation 0.6"
+)
+```
+
+
+## Generate simulated bivariate (multivariate) data 
+
+```{r}
+## define a variance-covariance matrix:
+Sigma <- matrix(c(5^2, 5 * 10 * 0.6, 
+                  5 * 10 * 0.6, 10^2),
+  byrow = FALSE, ncol = 2
+)
+## generate data:
+u <- MASS::mvrnorm(n = 100, mu = c(0, 0), 
+                   Sigma = Sigma)
+head(u, n = 3)
+```
+
+
+```{r echo=FALSE}
+ggplot(tibble(u_1 = u[, 1], u_2 = u[, 2]), 
+aes(u_1, u_2)) +
+  geom_point() +
+  theme_bw()
+```
+
+One practical implication: Such bi/multivariate distributions
+become critically important to understand when we turn to  hierarchical (linear mixed) models.
