@@ -52,9 +52,12 @@
   <a href="http://www.ling.uni-potsdam.de/~vasishth/">Shravan Vasishth</a>
   <br><br>
 
- <h4>Source code for book</h4>
+ <h4>Online version and source code for book</h4>
 
+ The free online version of the book is available <a href="https://bruno.nicenboim.me/bayescogsci/">here</a>. 
  You can access the source code for the book from <a href="https://github.com/bnicenboim/bayescogsci">here</a>.
+You can buy a <a href="https://www.routledge.com/Introduction-to-Bayesian-Data-Analysis-for-Cognitive-Science/Nicenboim-Schad-Vasishth/p/book/9780367359331">physical copy</a> of the book too.
+
 <br><br>
 
 <h4>Overview and motivation for this course</h4>
@@ -63,47 +66,57 @@
  of science. This is in large part due to the development of sophisticated
  software for probabilisic programming; a recent example is the astonishing
  computing capability afforded by the language Stan (<a
- href="https://mc-stan.org">mc-stan.org</a>). However, the underlying theory needed to
+ href="https://mc-stan.org">mc-stan.org</a>). <br>
+ 
+ However, the underlying theory needed to
  use this software sensibly is often inaccessible because end-users don't
  necessarily have the statistical and mathematical background to read the
  primary textbooks (such as Gelman et al's classic Bayesian data analysis, 3rd
- edition). In this course, we seek to cover this gap, by providing a relatively
+ edition).<br> 
+ 
+ In this book and the accompanying course, we seek to cover this gap, by providing a relatively
  accessible and technically non-demanding introduction to the basic workflow for
- fitting different kinds of linear models using Stan. To illustrate the
+ fitting different kinds of linear (mixed) models using Stan. To illustrate the
  capability of Bayesian modeling, we will use the R package RStan and a powerful
  front-end R package for Stan called brms.
 <br><br>
 
+<h4>MOOC on OpenHPI</h4>
+
+You can do a self-paced version of this course (chapters 1-4), 
+with auto-graded exercises, <a href="https://open.hpi.de/courses/bayesian-statistics2023">here</a>.
+Some 5000 people have signed up for this course.
+
 <h4>Is this course taught in person?</h4>
 
-We regularly teach parts of this course in person: 
+We regularly teach parts of this course in person at: 
 
 <ol>
-<li>Statistical Methods for Linguistics and Psychology (SMLP), Potsdam, Germany. This is an annual week-long summer school, held usually just before the AMLaP conference. Chapters 1-5 and 13 are covered in Intro Bayes, and the rest of the chapters in the Advanced Bayes track.</li> 
-<li>Methods in Linguistic Sciences (MILS) summer school, Gent, Belgium (in July usually). In this course, I cover chapters 1-5, and 13.</li>
-<li>I also teach the course over two semesters at the University of Potsdam, Germany. This covers the entire book (except the last chapter).</li>
-<li><a href="https://sites.google.com/site/himanshuyadavjnu/">Himanshu Yadav</a>, professor at the Indian Institute of Technology, Kanpur, also teaches this material, in India.</li>
+<li>The annual <a href="https://vasishth.github.io/smlp/">Statistical Methods for Linguistics and Psychology (SMLP)</a>, Potsdam, Germany. This is an annual week-long summer school, held usually just before the AMLaP conference. Chapters 1-5 and 13 are covered in Intro Bayes, and the rest of the chapters in the Advanced Bayes track.</li> 
+<li>The annual <a href="https://www.mils.ugent.be/">Methods in Linguistic Sciences (MILS) summer school</a>, Gent, Belgium (in July usually). In this course, I cover chapters 1-5, and 13.</li>
+<li>The University of Potsdam, Germany. This is a two-semester course that covers the entire book (except the last chapter).</li>
+<li>The Indian Institute of Technology, Kanpur. <a href="https://sites.google.com/site/himanshuyadavjnu/">Himanshu Yadav</a>,  also teaches this material, in India.</li>
 </ol>
 
 <h4>Prerequisites</h4>
 
 You must have a functioning computer to do this course.<br>
 
-We also assume familiarity with R. Participants will benefit most if they have
+We also assume familiarity with <a href="https://cran.r-project.org/">R</a>. Participants will benefit most if they have
 previously fit linear models and linear mixed models (using lme4) in R, in any
 scientific domain within linguistics and psychology. No knowledge of calculus or
 linear algebra is assumed (but will be helpful to know), but basic school level
-mathematics knowledge is assumed (this will be quickly revisited in class).
+mathematics knowledge is assumed.
 
 <br><br>
 
 <h4>Please install the following software before watching the videos</h4>
 
 We will be using the software <a href="http://cran.r-project.org/">R</a>, and <a
-href="https://www.rstudio.com/">RStudio</a>, so make sure you install these on
+href="https://www.rstudio.com/">RStudio</a> or <a href="">Visual Studio Code</a>, so make sure you install these on
 your computer. You should also install the R package <a
 href="https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started">rstan</a>;
-the R package <a href="https://github.com/paul-buerkner/brms">brms</a>.
+the R package <a href="https://github.com/paul-buerkner/brms">brms</a>, and all the packages mentioned in the introduction to the book.
 <strong>Please follow the installation instructions carefully</strong>.<br>
 
 Install the library bcogsci from <a href="https://github.com/bnicenboim/bcogsci">here</a>.
@@ -144,8 +157,9 @@ additional topics that we will skip:
 
 <ol>
 <li>Why teaching statistics with a cookbook approach doesn't work (video lecture coming soon).</li>  
- <li>Mathematical foundations: <a href="https://www.youtube.com/playlist?list=PL0TWbOjq4HH1Y1-PBA_guwZ482G8kQHHW">Video lectures</a><a href="https://openup.uni-potsdam.de/enrol/index.php?id=350">enroll here for online self-paced course</a></li> 
- <li>Linear modeling: <a href="https://github.com/vasishth/LM">Lecture notes</a></li> 
+ <li>Mathematical foundations: <a href="https://www.youtube.com/playlist?list=PL0TWbOjq4HH1Y1-PBA_guwZ482G8kQHHW">Video lectures</a>, 
+  <a href="https://openup.uni-potsdam.de/enrol/index.php?id=350">enroll here for online self-paced course</a>.</li> 
+ <li>Linear modeling: <a href="https://github.com/vasishth/LM">Lecture notes</a>.</li> 
  <li>Deciding on sample sizes from a Bayesian perspective: <a href="https://link.springer.com/article/10.1007/s42113-021-00125-y">Sample size determination for Bayesian hierarchical models commonly used in psycholinguistics</a>.
 Shravan Vasishth, Himanshu Yadav, Daniel Schad, and Bruno Nicenboim.
 Computational Brain and Behavior, 2022.</li>
