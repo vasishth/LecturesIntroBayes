@@ -1,16 +1,26 @@
 ---
 title: "Chapter 1: Foundations"
-author: "Shravan Vasishth"
-date: "https://bruno.nicenboim.me/bayescogsci/"
+author: "Shravan Vasishth (vasishth.github.io)"
+date: "June 2025"
 output: 
-  pdf_document
-toc: true
+  html_document:
+    theme: flatly
 fontsize: 12pt
 geometry: "a4paper,right=8.5cm,left=1cm,bottom=2cm,top=2cm"
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE, results='asis'}
+cat('
+<style>
+body {
+  margin-right: 120px;
+}
+</style>
+')
 ```
 
 \Large
@@ -23,13 +33,29 @@ Introduction to Bayesian Data Analysis for Cognitive Science
 
 Nicenboim, Schad, Vasishth
 
-https://bruno.nicenboim.me/bayescogsci/
+- Online version: https://bruno.nicenboim.me/bayescogsci/
+- Source code: https://github.com/bnicenboim/bayescogsci
+- Physical book: [here](https://www.routledge.com/Introduction-to-Bayesian-Data-Analysis-for-Cognitive-Science/Nicenboim-Schad-Vasishth/p/book/9780367359331)
+
+**Be sure to read the textbook's chapter 1 in addition to watching this lecture**.
+
+# Introduction: Motivation for this lecture
+
+- Whenever we collect data, an implicit assumption is that the data are being generated from a **random variable**.
+- Understanding the basic properties of random variables is of key importance when learning statistical modeling.
+- The ideas and concepts in this lecture are often not taught in statistics courses in linguistics and psychology.
+- The commonly used cookbook approach to teaching statistics leads to all kinds of misunderstandings that
+  have a snowball effect and are a big part of the cause for the replication crisis and other problems in inference 
+  that we see so often in empirical work in linguistics and psychology.  
+
+It only takes about a day to understand these materials, but the content here will positively 
+impact your ability to carry out statistical modeling and data analysis. 
 
 # Discrete random variables
 
-A random variable $X$ is a function $X : \Omega \rightarrow \mathbb{R}$ that associates to each outcome $\omega \in \Omega$ exactly one number $X(\omega) = x$.
+A random variable $X$ is a function $X : \Omega \rightarrow \mathbb{R}$ that associates to each **outcome** $\omega \in \Omega$ exactly one number $X(\omega) = x$.
 
-$S_X$ is all the $x$'s (all the possible values of X, the **support of X**). I.e., $x \in S_X$. We can also sloppily write $X \in S_X$. 
+$S_X$ is all the $x$'s (all the possible values of X, the **support of X**). I.e., $x \in S_X$.
 
 ## An example of a discrete RV
 
@@ -47,8 +73,10 @@ A second example of a discrete random variable: tossing a coin once.
 - $X(T)=0, X(H)=1$
 - $x=0,1; x \in S_X$
 
+### The probability mass function (PMF)
+
 Every discrete (continuous) random variable X has associated with it a 
-**probability mass (density)  function (PMD, PDF)**. 
+**probability mass (density)  function (PMF, PDF)**. 
 
 - PMF is used for discrete distributions and PDF for continuous. 
 - (Some books use PDF for both discrete and continuous distributions.)
@@ -71,7 +99,10 @@ Example of a PMF: a random variable $X$ representing tossing a coin once.
 - Formally: $p_X(x) = \hbox{Prob}(X(\omega) = x), x \in S_X$
 - The probability mass function defines the probability of each event:
 $p_X(0) = p_X(1) =0.5$.
-- The \textbf{cumulative distribution function} (CDF) $F(X\leq x)$ gives the cumulative probability of observing all the events $X\leq x$. 
+
+### The cumulative distribution function (CDF)
+
+The \textbf{cumulative distribution function} (CDF) $F(X\leq x)$ gives the cumulative probability of observing all the events $X\leq x$. 
 
 \begin{equation}
 \begin{split}
@@ -91,9 +122,7 @@ F(x=0) & = \hbox{Prob}(X \leq 0)\\
 \end{split}
 \end{equation}
 
-
-
-Simulate tossing a coin ten times, with probability (which I call $\theta$ below) of heads 0.5:
+Do 10 coin-tossing experiments, each with one trial. The probability (which I call $\theta$ below) of heads 0.5:
 
 ```{r}
 extraDistr::rbern(n = 10, prob = 0.5)
@@ -129,19 +158,19 @@ $$F(x=0) = Prob(X \leq 0) = \sum_{x=0}^{0} p_X(x) = 0.5$$
 extraDistr::pbern(0, prob = 0.5)
 ```
 
-## Another example: The binomial
+## Another example of a discrete random variable: The binomial
 
-- Consider tossing a coin 10 times (number of trials, `size` in R). 
-- When number of trials (size) is 1, we have a Bernoulli; when we have size greater than 1, we have a Binomial.
+- Consider carrying out a single experiment where you toss a coin 10 times (the number of trials, `size` in R). 
+- When the number of trials (size) is 1, we have a Bernoulli; when we have size greater than 1, we have a Binomial.
 
 
-$$\theta^{x}(1-\theta)^{1-x}$$ where $$S_x=\{0,1\}$$
+$$\theta^{x}(1-\theta)^{1-x}$$ where $$S_X=\{0,1\}$$
 
 **Binomial PMF**
 
 $${n \choose x} \theta^{x}(1-\theta)^{n-x}$$ 
 
-where $$S_x=\{0,1,\dots,n\}$$
+where $$S_X=\{0,1,\dots,n\}$$
 
 - $n$ is the number of times the coin was tossed (the number of trials; size in R).
 - ${n \choose x}$ is the number of ways that you can get $x$ successes in $n$ trials.
@@ -193,26 +222,28 @@ ggplot(tibble(x = c(0, 10)), aes(x)) +
   theme_bw()
 ```
 
-## Four critical R functions
+## Four critical R functions for the binomial RV
 
-**1. Generate random data**
+**1. Generate random data: rbinom**
 
-n: number of experiments done (\textbf{Note}: we used n for trials above)
+- n: number of experiments done (**Note**: in the binomial pdf, n stands for the number of trials). In R, n is 
+called the number of observations.
+- size: the number of times the coin was tossed in each experiment (the number of trials)
 
-size: the number of times the coin was tossed in each experiment
+Example: 10 separate experiments, each with 1 trial:
 
 ```{r}
 rbinom(n = 10, size = 1, prob = 0.5)
 ## equivalent to: rbern(10,0.5)
 ```
 
-Compare: 
+Example: 10 separate experiments, each with 10 trials: 
 
 ```{r}
 rbinom(n = 10, size = 10, prob = 0.5)
 ```
 
-**2. Compute probabilities of particular events (0,1,\dots,10 successes when n=10)**
+**2. Compute probabilities of particular events (0,1,...,10 successes when n=10): dbinom**
 
 ```{r}
 probs <- round(dbinom(0:10, size = 10, 
@@ -224,7 +255,7 @@ x <- 0:10
 (probs_df<-data.frame(x,probs))
 ```
 
-**3. Compute cumulative probabilities**
+**3. Compute cumulative probabilities: pbinom**
 
 ```{r echo=FALSE}
 #round(pbinom(0:10, size = 10, prob = 0.5),3)
@@ -244,7 +275,7 @@ ggplot(tibble(q = c(0, 10)), aes(q)) +
   theme_bw()
 ```
 
-**4. Compute quantiles using the inverse of the CDF**
+**4. Compute quantiles using the inverse of the CDF: qbinom**
 
 ```{r}
 probs <- pbinom(0:10, size = 10, prob = 0.5)
@@ -275,6 +306,9 @@ ggplot(invcdf, aes(
   theme_bw()
 ```
 
+These four functions are the d-p-q-r family of functions, and are available for all
+the distributions available in R (e.g., Poisson, geometric, normal, beta, uniform, gamma, exponential, Cauchy,  etc.).
+
 # Continuous random variables
 
 In coin tosses, H and T are discrete possible outcomes.
@@ -287,13 +321,17 @@ In coin tosses, H and T are discrete possible outcomes.
  X \sim f(\cdot)
 \end{equation}
 
-means that the random variable $X$ has PDF $f(\cdot)$. For example, if we say that $X\sim Normal(\mu,\sigma)$, we are assuming that the PDF is
+means that the random variable $X$ is assumed to have PDF $f(\cdot)$. 
+
+For example, if we say that $X\sim Normal(\mu,\sigma)$, we are assuming that the PDF is
 
 \begin{equation}
 f(x\mid \mu, \sigma)= \frac{1}{\sqrt{2\pi \sigma^2}} \exp\left[-\frac{(x-\mu)^2}{2\sigma^2}\right]
 \end{equation}
 
 where $-\infty<x<+\infty$
+
+We can **truncate** the normal distribution such that $S_X$ is bounded between some lower bound and/or upper bound--this comes later.
 
 ## The normal random variable
 
@@ -305,7 +343,7 @@ f(x\mid \mu, \sigma)= \frac{1}{\sqrt{2\pi \sigma^2}} \exp\left[-\frac{(x-\mu)^2}
 
 where  $-\infty<x<+\infty$.
 
-- The support of $X$, i.e., the elements of $S_X$, has values ranging from $-\infty$ to $+\infty$ (we can **truncate** the normal to have finite values---this comes later)
+- The support of $X$, i.e., the elements of $S_X$, has values ranging from $-\infty$ to $+\infty$
 - $\mu$ is the location parameter (here, mean)
 - $\sigma$ is the scale parameter (here, standard deviation)
 
@@ -319,7 +357,7 @@ dbinom(x = 2, size = 10, prob = 0.5)
 
 - In a continuous distribution, probability is defined as the **area under the curve**.
 - As a consequence, for any particular **point** value $x$, where $X\sim Normal(\mu,\sigma)$, it is always the case that $\hbox{Prob}(X=x) = 0$.
-- In any continuous distribution, we can compute probabilities like $\hbox{Prob}(x_1<X<x_2) = ?$, where $x_1<x_2$ by summing up the \textbf{area under the curve}.
+- In any continuous distribution, we can compute probabilities like $\hbox{Prob}(x_1<X<x_2) = ?$, where $x_1<x_2$, by summing up the **area under the curve**.
 - To compute probabilities like $\hbox{Prob}(x_1<X<x_2) = ?$, we need the cumulative distribution function.
 
 The cumulative distribution function (CDF) is
@@ -371,7 +409,7 @@ text(-0.7, 0.15, pos = 4, cex = 3.5, expression(paste("95%")))
 ```{r echo=FALSE}
 # draw the normal curve
 # draw the normal curve
-curve(dnorm(x, 0, 1), xlim = c(-3, 3), main = "Normal density")
+curve(dnorm(x, 0, 1), xlim = c(-4, 4), main = "Normal density")
 
 # define shaded region
 from.z <- -3
@@ -391,6 +429,13 @@ More generally, for any $Normal(\mu,\sigma)$,
 
 ## The normalizing constant and the kernel
 
+The PDF of the normal again:
+
+\begin{equation}
+f(x\mid \mu, \sigma)= \frac{1}{\sqrt{2\pi \sigma^2}} \exp\left[-\frac{(x-\mu)^2}{2\sigma^2}\right] 
+\end{equation}
+
+
 This part of $f(x\mid \mu,\sigma)$ (call it $g(x)$) is  the ``kernel'' of the normal PDF:
 
 \begin{equation}
@@ -402,11 +447,11 @@ For the above function, the area under the curve doesn't sum to 1:
 Sum up the area under the curve $\int g(x)\, dx$:
 
 ```{r}
-normkernel <- function(x, mu = 0, sigma = 1) {
+g <- function(x, mu = 0, sigma = 1) {
   exp((-(x - mu)^2 / (2 * (sigma^2))))
 }
 
-integrate(normkernel, lower = -Inf, upper = +Inf)
+integrate(g, lower = -Inf, upper = +Inf)$value
 ```
 
 The shape doesn't change of course:
@@ -414,7 +459,7 @@ The shape doesn't change of course:
 ```{r echo=FALSE}
 x <- seq(-10, 10, by = 0.01)
 
-plot(function(x) normkernel(x), -3, 3,
+plot(function(x) g(x), -3, 3,
   main = "Normal density kernel", ylim = c(0, 1),
   ylab = "density", xlab = "X"
 )
@@ -441,27 +486,28 @@ Solving for $k$ just amounts to computing:
 k  = \frac{1}{\int g(x)\, dx}
 \end{equation}
 
+So, in our example above, 
+
+```{r}
+(k<-1/integrate(g, lower = -Inf, upper = +Inf)$value)
+```
+
+The above number is just $\frac{1}{\sqrt{2 \pi \sigma^2}}$, where $\sigma=1$:
+
+```{r}
+1/(sqrt(2*pi*1))
+```
+
+Once we include the normalizing constant, the area under the curve in $g(x)$ sums to 1:
+
+```{r}
+k * integrate(g, lower = -Inf, upper = +Inf)$value
+```
+
+
 We will see the practical implication of this when we move on to chapter 2 of the textbook.
 
-## The four key functions for the normal distribution
-
-Recall these key functions for the Bernoulli:
-
-```{r}
-extraDistr::rbern(10, prob = 0.5)
-extraDistr::dbern(x = 1, prob = 0.5)
-extraDistr::pbern(q = 1, prob = 0.5)
-extraDistr::qbern(p = 1, prob = 0.5)
-```
-
-For the binomial:
-
-```{r}
-rbinom(1, size = 10, prob = 0.5)
-dbinom(x = 2, size = 10, prob = 0.5)
-pbinom(q = 2, size = 10, prob = 0.5)
-qbinom(p = 0.0546875, size = 10, prob = 0.5)
-```
+## The d-p-q-r functions for the normal distribution
 
 In the continuous case, we also have this family of d-p-q-r functions. In the normal distribution:
 
@@ -573,41 +619,6 @@ ggplot(tibble(y = c(0, 1)), aes(y)) +
 ```
 
 
-# The expectation and variance of an RV
-
-The expectation of a discrete random variable $Y$ with probability mass function f(y), is defined as
-
-\begin{equation}
-E[Y] = \sum_y y \cdot f(y)
-\end{equation}
-
-**Example**: Toss a fair coin once. The possible events are Tails (represented as 0) and Heads (represented as 1), each with equal probability, 0.5. The expectation is: 
-
-\begin{equation}
-E[Y] = \sum_y y \cdot f(y) = 0\cdot 0.5 + 1\cdot 0.5 = 0.5 
-\end{equation}
-
-
-The variance is defined as:
-
-\begin{equation}
-Var(Y) = E[Y^2]-E[Y]^2
-\end{equation}
-
-In the **binomial**, $Y \sim {n \choose k} \theta^k (1-\theta)^{n-k}$:
-
-- The expectation: $E[Y] = n\theta$ 
-  - Estimated by $\hat\theta = \frac{k}{n}$
-- The variance: $Var(Y) = n\theta (1-\theta)$
-  - Estimated by $Var(y) = n\hat\theta (1-\hat\theta)$
-
-In the **normal**, $Y\sim Normal(\mu,\sigma)$:
-
-- The expectation: $E[Y] = \int y f(y)\, dy = \mu$ 
-  - Estimated by  $\hat\mu = \bar{y}=\frac{\sum y}{n}$
-- The variance: $Var(Y) = \sigma^2$
-  - Estimated by $\hat\sigma^2  = \frac{\sum (y_i-\bar{y})^2}{n-1}$
-
 # The likelihood function (Binomial)
 
 The **likelihood function** refers to the PMF  $p(k|n,\theta)$, treated as a function of $\theta$. 
@@ -659,6 +670,8 @@ ggplot(mle, aes(x = n, y = mean_store)) +
   theme_bw()
 ```
 
+Sample size is key here: as $n\rightarrow \infty$, we approach the true value of the parameter (here, $\theta$).
+
 # The likelihood function (Normal)
 
 
@@ -666,15 +679,15 @@ ggplot(mle, aes(x = n, y = mean_store)) +
 \mathcal{L}(\mu,\sigma|x)=Normal(x,\mu,\sigma)
 \end{equation}
 
+Below, assume that $\sigma=1$.
+
 ```{r}
 ## the data:
 x<-0
 ## the likelihood under different values 
-## of mu and sigma:
+## of mu:
 dnorm(x,mean=0,sd=1)
 dnorm(x,mean=10,sd=1)
-dnorm(x,mean=0,sd=10)
-dnorm(x,mean=10,sd=10)
 ```
 
 Assuming that $\sigma=1$, the likelihood function of $\mu$:
@@ -687,7 +700,7 @@ plot(muvals,dnorm(0,mean=muvals,sd=1),
 abline(v=0)
 ```
 
-If we have two independent data points, the joint likelihood for two arbitrary values of $\mu$ and $\sigma$:
+If we have two **independent** data points, the joint likelihood given the data of $\mu$, assuming $\sigma=1$:
 
 ```{r}
 x1<-0
@@ -712,6 +725,7 @@ sum(dnorm(x,mean=0,sd=1,log=TRUE))
 sum(dnorm(x,mean=10,sd=1,log=TRUE))
 ```
 
+Model 1 has higher likelihood than Model 2, so we'd prefer to assume that the data are better characterized by Model 1 than 2 (neither may be the true model!).
 
 More generally, for independent and identically distributed data $x=x_1,\dots,x_n$:
 
@@ -725,7 +739,15 @@ or
 \ell (\mu,\sigma|x) = \sum_{i=1}^n log(Normal(x_i,\mu,\sigma))
 \end{equation}
 
+# The expectation and variance of an RV
+
+Read section 1.4.1 of chapter 1 of the textbook, and (optionally) chapter 2 of the linear modeling lecture notes here: 
+
+https://github.com/vasishth/LM
+
 # Bivariate/multivariate distributions
+
+## Discrete bivariate distributions
 
 ```{r echo=FALSE}
 library(bcogsci)
@@ -772,7 +794,7 @@ rownames(probs) <- paste("y=", 0:1, sep = "")
 
 The joint PMF: $p_{X,Y}(x,y)$
 
-\tiny
+\small
 
 ```{r echo=FALSE}
 probs_f <- probs %>%
@@ -793,7 +815,7 @@ For each possible pair of values of X and Y, we have a **joint probability mass 
 
 Two useful quantities that we can compute:
 
-**The marginal distributions ($p_{X}$ and $p_Y$)**: 
+### The marginal distributions ($p_{X}$ and $p_Y$)
 
 \begin{equation}
 p_{X}(x)=\sum_{y\in S_{Y}}p_{X,Y}(x,y).\label{eq-marginal-pmf2}
@@ -804,7 +826,7 @@ p_{Y}(y)=\sum_{x\in S_{X}}p_{X,Y}(x,y).\label{eq-marginal-pmf}
 \end{equation}	
 
 
-\tiny
+\small
 
 ```{r echo=FALSE}
 # P(Y)
@@ -840,7 +862,7 @@ barplot(PX, main = "p(X)")
 barplot(PY, main = "p(Y)")
 ```
 
-**The conditional distributions ($p_{X|Y}$ and $p_{Y|X}$)**
+### The conditional distributions ($p_{X|Y}$ and $p_{Y|X}$)
 
 \begin{equation}
 p_{X\mid Y}(x\mid y) = \frac{p_{X,Y}(x,y)}{p_Y(y)}	
@@ -855,7 +877,7 @@ p_{Y\mid X}(y\mid x) = \frac{p_{X,Y}(x,y)}{p_X(x)}
 
 Let's do the calculation for $p_{X\mid Y}(x\mid y=0)$.
 
-\tiny
+\small
 
 ```{r echo=FALSE}
 kableExtra::kable(probs_f,
@@ -876,21 +898,10 @@ p_{X\mid Y} (1\mid 0) =& \frac{p_{X,Y}(1,0)}{p_Y(0)}\\
 \end{split}	
 \end{equation}
 
-```{r echo=FALSE, results="asis",eval=FALSE}
-y0 <- c("$0.062$", rep("", 6))
-y1 <- rep("", 7)
-conddistrn <- rbind(y0, y1)
-colnames(conddistrn) <- paste("$x=", 1:7, "$", sep = "")
-rownames(conddistrn) <- c("$p_{X|Y(x|y=0)}$", "$p_{X|Y(x|y=1)}$")
+As an exercise, figure out the conditional distribution of X given Y, and the conditional distribution of Y given X. 
 
-kableExtra::kable(conddistrn,
-  digits = 3, booktabs = TRUE,
-  escape = FALSE,
-  vline = "", # format="latex",
-  caption = "A table for listing conditional distributions of X given Y."
-)
-```
 
+## Continuous bivariate distributions
 
 Next, we turn to continuous bivariate/multivariate distributions.
 
