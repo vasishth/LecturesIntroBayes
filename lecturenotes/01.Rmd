@@ -937,16 +937,16 @@ The joint distribution of $X$ and $Y$ is defined as follows:
 \right)
 \end{equation}
 
-The joint PDF has the property that the volume under the curve sums to 1.
+The joint PDF has the property that the volume under the surface sums to 1.
 
-Formally, we would write the volume under the curve as a double integral: we are summing up the volume under the curve for both $X$ and $Y$ (hence the two integrals).
+Formally, we would write the volume under the surface as a double integral: we are summing up the volume under the surface for both $X$ and $Y$ (hence the two integrals).
 
 \begin{equation}
 \iint_{S_{X,Y}} f_{X,Y}(x,y)\, dx dy = 1
 \end{equation}
 
 
-Here, the terms $dx$ and $dy$ express the fact that we are computing the volume under the curve along the $X$ axis and the $Y$ axis.
+Here, the terms $dx$ and $dy$ express the fact that we are computing the volume under the surface along the $X$ axis and the $Y$ axis.
 
 The joint CDF would be written as follows. The equation below gives us the probability of observing a value like $(u,v)$ or some value smaller than that (i.e., some $(u',v')$, such that $u'<u$ and $v'<v$).
 
