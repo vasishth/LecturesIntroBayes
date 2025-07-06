@@ -1,0 +1,961 @@
+---
+title: "Chapter 3: Computational Bayesian data analysis"
+author: "Shravan Vasishth (vasishth.github.io)"
+date: "June 2025"
+output: 
+  html_document:
+    theme: flatly
+fontsize: 12pt
+geometry: "a4paper,right=8.5cm,left=1cm,bottom=2cm,top=2cm"
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggplot2)
+```
+
+```{r, echo=FALSE, results='asis'}
+cat('
+<style>
+body {
+  margin-right: 120px;
+}
+</style>
+')
+```
+
+\Large
+
+\newpage
+
+# Textbook
+
+Introduction to Bayesian Data Analysis for Cognitive Science
+
+Nicenboim, Schad, Vasishth
+
+- Online version: https://bruno.nicenboim.me/bayescogsci/
+- Source code: https://github.com/bnicenboim/bayescogsci
+- Physical book: [here](https://www.routledge.com/Introduction-to-Bayesian-Data-Analysis-for-Cognitive-Science/Nicenboim-Schad-Vasishth/p/book/9780367359331)
+
+**Be sure to read the textbook's chapters 1-3 in addition to watching this lecture**.
+
+# Linear modeling 
+
+```{r, include=FALSE}
+short_summary <- function (x, digits = 2, ...)
+{
+  x<- summary(x)
+  cat("...\n")
+    # cat(" Family: ")
+    # cat(summarise_families(x$formula), "\n")
+    # cat("  Links: ")
+    # cat(summarise_links(x$formula, wsp = 9), "\n")
+    # cat("Formula: ")
+    # print(x$formula, wsp = 9)
+    # cat(paste0("   Data: ", x$data_name, " (Number of observations: ",
+        # x$nobs, ") \n"))
+    if (!isTRUE(nzchar(x$sampler))) {
+        cat("\nThe model does not contain posterior samples.\n")
+    }
+    else {
+        final_samples <- ceiling((x$iter - x$warmup)/x$thin *
+            x$chains)
+        # cat(paste0("Samples: ", x$chains, " chains, each with iter = ",
+        #     x$iter, "; warmup = ", x$warmup, "; thin = ", x$thin,
+        #     ";\n", "         total post-warmup samples = ", final_samples,
+        #     "\n\n"))
+        if (nrow(x$prior)) {
+            cat("Priors: \n")
+            print(x$prior, show_df = FALSE)
+            cat("\n")
+        }
+        if (length(x$splines)) {
+            cat("Smooth Terms: \n")
+            brms:::print_format(x$splines, digits)
+            cat("\n")
+        }
+        if (length(x$gp)) {
+            cat("Gaussian Process Terms: \n")
+            brms:::print_format(x$gp, digits)
+            cat("\n")
+        }
+        if (nrow(x$cor_pars)) {
+            cat("Correlation Structures:\n")
+            brms:::print_format(x$cor_pars, digits)
+            cat("\n")
+        }
+        if (length(x$random)) {
+            cat("Group-Level Effects: \n")
+            for (i in seq_along(x$random)) {
+                g <- names(x$random)[i]
+                cat(paste0("~", g, " (Number of levels: ", x$ngrps[[g]],
+                  ") \n"))
+                brms:::print_format(x$random[[g]], digits)
+                cat("\n")
+            }
+        }
+        if (nrow(x$fixed)) {
+            cat("Population-Level Effects: \n")
+            brms:::print_format(x$fixed, digits)
+            cat("\n")
+        }
+        if (length(x$mo)) {
+            cat("Simplex Parameters: \n")
+            brms:::print_format(x$mo, digits)
+            cat("\n")
+        }
+        if (nrow(x$spec_pars)) {
+            cat("Family Specific Parameters: \n")
+            brms:::print_format(x$spec_pars, digits)
+            cat("\n")
+        }
+        if (length(x$rescor_pars)) {
+            cat("Residual Correlations: \n")
+            brms:::print_format(x$rescor, digits)
+            cat("\n")
+        }
+        # cat(paste0("Samples were drawn using ", x$sampler, ". "))
+        if (x$algorithm == "sampling") {
+            #cat(paste0("For each parameter, Bulk_ESS\n", "and Tail_ESS are effective sample size measures, ",
+             #   "and Rhat is the potential\n", "scale reduction factor on split chains ",
+              #  "(at convergence, Rhat = 1)."))
+        }
+        cat("...\n")
+    }
+    invisible(x)
+}
+```
+
+Suppose $y$ is a vector of continuous responses; assume for now that the $y$ are independent and identically distributed:
+
+$y \stackrel{iid}{\sim} Normal(\mu,\sigma)$
+
+This is the simple linear model:
+
+$y = \mu + \varepsilon \hbox{ where } \varepsilon \sim Normal(0,\sigma)$
+
+There are two parameters, $\mu,\sigma$, so we need priors on these. 
+We expand on this simple model next.
+
+ 
+
+The way we will conduct data analysis is as follows:
+
+  - Given data, specify a **likelihood function**.
+  - Specify **prior distributions** for model parameters.
+  - Evaluate whether model makes sense, using simulated data, **prior predictive** and **posterior predictive** checks, and (if you want to claim a discovery) calibrating true and false discovery rates.
+  - Using software, derive **marginal posterior distributions** for parameters given a likelihood function and prior density. I.e., simulate parameters to get **samples from posterior distributions** of parameters using some **Markov Chain Monte Carlo (MCMC) sampling algorithm**.
+  - Check that the model converged using **model convergence** diagnostics,
+  - Summarize **posterior distributions** of parameter samples and make your scientific decision.
+
+We will now work through some specific examples to illustrate how the data analysis process works.
+
+# Example 1: A single subject pressing a button repeatedly
+
+As a first example, we will fit a simple linear model to some reaction time data.
+
+
+The data frame df_spacebar contains data of a subject pressing the space bar without reading in a self-paced reading experiment.
+
+## Install the library
+
+Install the library bcogsci. See:
+
+https://github.com/bnicenboim/bcogsci
+
+## Load the data
+
+```{r, echo=TRUE,reading_noreading}
+library(bcogsci)
+data("df_spacebar")
+head(df_spacebar)
+```
+
+## Visualizing the data
+
+It is a good idea to look at the distribution of the data before doing anything else. See Figure \ref{fig:m1visualize}.
+
+```{r fig.height=4,fig.cap="\\label{fig:m1visualize}Visualizing the data."}
+plot(density(df_spacebar$t),
+     main="Button-press data",
+     xlab="Tapping time")
+```
+
+The data looks a bit skewed, but we ignore this for the moment.
+
+## Define the likelihood function
+
+Let's model the data with the following assumptions:
+
+- There is a true underlying time, $\mu$, that the participant needs to press the space-bar.
+- There is some noise around $\mu$.
+- The noise is normally distributed (this assumption is questionable given the skew but; we fix this assumption later).
+
+
+This means that the likelihood for each observation $n$ will be:
+
+\begin{equation}
+\begin{aligned}
+t_n \sim Normal(\mu, \sigma)
+\end{aligned}
+\end{equation}
+
+where $n =1 \ldots N$.
+
+This is just the simple linear model:
+
+\begin{equation}
+t = \mu + \varepsilon \hbox{ where } \varepsilon \sim Normal(0,\sigma)
+\end{equation}
+
+## Define the priors for the parameters
+
+We are going to use the following priors for the two parameters in this model:
+
+\begin{equation}
+\begin{aligned}
+\mu &\sim Normal(0, 2000) \\
+\sigma &\sim Normal(0, 500) \text{ truncated so that } \sigma > 0
+\end{aligned}
+\end{equation}
+
+
+In order to decide on a prior for the parameters, always visualize them first. See the Figure below.
+
+```{r echo=FALSE,fig.height=3,fig.cap="\\label{fig:m1priors}Visualizing the priors for example 1."}
+op<-par(mfrow=c(1,2),pty="s")
+x<-seq(-4000,4000,by=1)
+plot(x,dnorm(x,mean=0,sd=2000),type="l",
+     main=expression(paste("Prior for ",mu)),xlab=expression(mu))
+x<-seq(0,4000,by=1)
+plot(x,dnorm(x,mean=0,sd=500),type="l",
+     main=expression(paste("Prior for ",sigma)),xlab=expression(sigma))
+
+```
+
+
+
+### Prior predictive distribution
+
+With these priors, we are going to generate something called the **prior predictive distribution**. This helps us check whether the priors make sense.
+
+Formally, we want to know the density $f(\cdot)$ of data points $t_1,\dots,t_n$, given a vector of priors $\Theta$. In our example, $\Theta=\langle\mu,\sigma \rangle$. The prior predictive density is:
+
+\begin{equation}
+f(t_1,\dots,t_n)= \int f(t_1)\cdot f(t_2)\cdots f(t_n) f(\Theta) \, d\Theta 
+\end{equation}
+
+
+
+
+In essence, we integrate out the parameters. Here is one way to do it in R:
+
+  - Take one sample from each of the priors
+  - Generate *nobs* data points using those samples
+
+This would give us a matrix containing nsim * nobs generated data. 
+We can then plot the prior predictive densities generated.
+
+
+```{r echo=TRUE,message=FALSE}
+## needed for half-normal distribution
+library(extraDistr) 
+## number of simulations
+nsim<-1000
+## number of observations generated 
+## each time:
+nobs<-100
+y<-matrix(rep(NA,nsim*nobs),ncol = nobs)
+mu<-rnorm(nsim,mean=0,sd=2000)
+## truncated normal, cut off at 0:
+sigma<-rtnorm(nsim,mean=0,sd=500,a=0)
+
+for(i in 1:nsim){
+y[i,]<-rnorm(nobs,mean=mu[i],sd=sigma[i])
+}
+```
+
+
+
+```{r echo=FALSE}
+op<-par(mfrow=c(2,2),pty="s")
+random_sample<-sample(1:nsim,4)
+for(i in random_sample){
+hist(y[i,],main="",freq=FALSE)
+}
+```
+
+
+
+
+We can try to redefine the prior for $\mu$  to have only positive values, and then check again. We still get some negative values, but that is because we are assuming that 
+
+$y \sim Normal(\mu,\sigma)$
+
+which will have negative values for small $\mu$ and large $\sigma$. 
+
+
+
+```{r echo=TRUE}
+y<-matrix(rep(NA,nsim*nobs),ncol = nobs)
+mu<-rtnorm(nsim,mean=0,sd=2000,a=0)
+for(i in 1:nsim){
+y[i,]<-rnorm(nobs,mean=mu[i],sd=sigma[i])
+}
+```
+
+
+
+```{r echo=FALSE}
+op<-par(mfrow=c(2,2),pty="s")
+random_sample<-sample(1:nsim,4)
+for(i in random_sample){
+hist(y[i,],main="",freq=FALSE)
+}
+```
+
+
+## Generating prior predictive distributions using Stan
+
+We can generate a prior predictive distribution using Stan as follows.
+
+First, we define a Stan model that defines the priors and defines how the data are to be generated. 
+
+Documentation on Stan is available at [mc-stan.org](mc-stan.org).
+
+
+
+```{r echo=TRUE}
+priorpred<-"data {
+  int N; 
+}
+parameters {
+real<lower=0> mu;
+real<lower=0> sigma;
+}
+model {
+	mu ~ normal(0,2000);
+	sigma ~ normal(0,500);
+}
+generated quantities {
+  vector[N] y_sim;
+  for(i in 1:N) {
+    y_sim[i] = normal_rng(mu,sigma);
+  }}"
+```
+
+
+
+Load RStan and brms.
+
+```{r echo=TRUE,message=FALSE}
+## load rstan
+library(rstan)
+options(mc.cores = parallel::detectCores())
+library(brms)
+```
+
+
+
+Then we generate the data:
+
+```{r echo=TRUE,warning=FALSE,message=FALSE,results="hide",cache=TRUE}
+## generate 100 data-points 
+dat<-list(N=100)
+
+## fit model:
+m1priorpred<-stan(model_code=priorpred,
+                  data=dat,
+                  chains = 4, 
+                  warmup = 1000,
+                iter = 2000)
+```
+
+
+
+
+```{r echo=TRUE}
+## extract and plot one of the data-sets:
+y_sim<-extract(m1priorpred,pars="y_sim")
+str(y_sim)
+```
+
+
+
+```{r echo=TRUE,fig.height=3}
+## plot 100th simulated data set:
+hist(y_sim$y_sim[100,],
+     main="Prior predictive distribution",
+     xlab="y_sim",freq=FALSE)
+```
+
+## Fit the model in Stan
+
+Having satisfied ourselves that the priors mostly make sense (do they, though?), we now fit the model to simulated data generated from known parameter values. The goal here is to ensure that the model recovers the true underlying parameters.
+
+Next, we write the Stan model, adding a likelihood in the model block:
+
+
+```{r echo=TRUE}
+m1<-"data {
+  int N;
+  real y[N]; // data
+}
+parameters {
+real<lower=0> mu;
+real<lower=0> sigma;
+}
+model {
+mu ~ normal(0,2000);
+sigma ~ normal(0,500);
+y ~ normal(mu,sigma);
+}
+generated quantities {
+  vector[N] y_sim;
+  for(i in 1:N) {
+    y_sim[i] = normal_rng(mu,sigma);
+  }}
+"
+```
+
+
+
+Then generate simulated data with known parameter values (we decide what these are):
+
+```{r sim_data,echo=TRUE}
+set.seed(123)
+N <- 500
+true_mu <- 400
+true_sigma <- 125
+y <- rnorm(N, true_mu, true_sigma)
+
+y <- round(y) 
+sim_data <- data.frame(y=y)
+dat<-list(y=y,N=N)
+```
+
+
+
+Finally, we fit the model:
+
+```{r echo=TRUE,results="hide",cache=TRUE}
+## fit model:
+m1rstan<-stan(model_code=m1,
+                  data=dat,
+                  chains = 4, 
+                iter = 2000)
+
+## extract posteriors:
+posteriors<-extract(m1rstan,
+            pars=c("mu","sigma"))
+```
+
+
+
+```{r echo=FALSE,fig.height=4,fig.cap="\\label{fig:m1rstanpost}Posteriors from fake data, model m1. Vertical lines show the true values of the parameters."}
+op<-par(mfrow=c(1,2),pty="s")
+hist(posteriors$mu,
+     main=expression(paste("posterior for ",mu)),freq=FALSE,xlab="")
+abline(v=400)
+hist(posteriors$sigma,
+     main=expression(paste("posterior for ",sigma)),freq=FALSE,xlab="")
+abline(v=125)
+```
+
+### Posterior predictive checks
+
+Once we have the posterior distribution $f(\Theta\mid y)$, we can derive the predictions based on this posterior distribution:
+
+\begin{equation}
+p(y_{pred}\mid y ) = \int p(y_{pred}, \Theta\mid y)\, d\Theta= \int 
+p(y_{pred}\mid \Theta,y)p(\Theta\mid y)\, d\Theta
+\end{equation}
+
+Assuming that past and future observations are conditionally independent given $\Theta$, i.e., $p(y_{pred}\mid \Theta,y)= p(y_{pred}\mid \Theta)$, we can write:
+
+
+\begin{equation}
+p(y_{pred}\mid y )=\int p(y_{pred}\mid \Theta) p(\Theta\mid y)\, d\Theta
+\end{equation}
+
+Note that we are conditioning $y_{pred}$ only on $y$, we do not condition on what we don't know ($\Theta$); **we integrate out the unknown parameters**.
+
+
+
+This posterior predictive distribution is different from  the frequentist approach, which gives only a predictive distribution of $y_{pred}$ given our estimate of $\theta$ (a point value).
+
+In the Stan code above, we have already generated the posterior predictive distribution, in the generated quantities block.
+
+
+### Implementing the model in brms
+
+This model is expressed in `brms` in the following way. First, define the priors:
+
+```{r echo=TRUE}
+priors <- c(set_prior("normal(0, 2000)", 
+                      class = "Intercept"),
+            set_prior("normal(0, 500)", 
+                      class = "sigma"))
+```
+
+
+
+Then, define the generative process assumed:
+
+```{r echo=TRUE,cache=TRUE,warning=FALSE,message=FALSE,results="hide"}
+m1brms<-brm(t~1,df_spacebar,prior = priors,
+       iter = 2000,
+       warmup = 1000,
+       chains = 4,
+       family = gaussian(), 
+       control = list(adapt_delta = 0.99))
+```
+
+### Summarizing the posteriors, and convergence diagnostics
+
+A graphical summary of posterior distributions of model m1 is shown below:
+
+```{r echo=FALSE,warning=FALSE,message=FALSE,fig.height=4,message=FALSE,fig.cap="\\label{fig:m1stanplot}Posterior distributions of the parameters in model m1."}
+stanplot(m1brms,type="hist")
+```
+
+
+
+The trace plots below show how well the four chains are mixing:
+
+```{r echo=FALSE,warning=FALSE,message=FALSE,fig.height=4,message=FALSE,fig.cap="\\label{fig:m1traceplot}Trace plots in model m1."}
+stanplot(m1brms,type="trace")
+```
+
+
+
+An alternative way to plot is shown below.
+
+```{r echo=FALSE,fig.height=4,message=FALSE,fig.cap="\\label{fig:m1plot}Posterior distributions and trace plots in model m1."}
+plot(m1brms)
+```
+
+## Fitting the brms model on simulated data
+
+```{r fit_sim,echo=TRUE,message=FALSE,warning=FALSE,eval=FALSE,cache=TRUE}
+m1_fakebrms<-brm(y~1,sim_data,prior = priors,
+       iter = 2000, chains = 4,family = gaussian(), 
+       control = list(adapt_delta = 0.99))
+```
+
+### Summarizing the posterior distribution
+
+We are assuming that there's a true underlying time it takes to press the space bar, $\mu$, and there is normally distributed noise with a Normal(0,$\sigma$) truncated at 0 that generates the different button tapping times. 
+All this is encoded in our likelihood by assuming that the tapping times are normally distributed with an unknown true mean $\mu$ (and an unknown standard deviation $\sigma$). 
+
+
+
+The objective of the Bayesian model is to learn about the plausible values of $\mu$, or in other words, to get a distribution that encodes what we know about the true mean of the distribution of RTs, and about the true standard deviation, $\sigma$, of the distribution of RTs.
+
+
+
+Our model allows us to answer questions such as:
+
+What is the probability that the underlying value of the mindless press of
+the space bar would be over, say 170 ms?**
+
+
+
+
+As an example, consider this model that we ran above.
+
+
+```{r echo=TRUE,cache=TRUE,results="hide",message=FALSE}
+priors <- c(set_prior("normal(0, 2000)", 
+                      class = "Intercept"),
+            set_prior("normal(0, 500)", 
+                      class = "sigma"))
+
+m1brms<-brm(t~1,df_spacebar,prior = priors,
+       iter = 2000,
+       warmup = 1000,
+       chains = 4,
+       family = gaussian(), 
+       control = list(adapt_delta = 0.99))
+```
+
+
+
+
+Now compute the posterior probability  $Prob(\mu>170)$:
+
+```{r echo=TRUE,warning=FALSE,message=FALSE}
+mu_post<-posterior_samples(m1brms,
+         variable=c("b_Intercept"))$b_Int
+mean(mu_post>170)
+```
+
+
+
+### The credible interval
+
+The 95% credible interval can be extracted for $\mu$ as follows:
+
+```{r echo=TRUE}
+posterior_interval(m1brms,
+    variable=c("b_Intercept"))
+```
+
+\small
+```{r}
+posterior_summary(m1brms,
+    variable=c("b_Intercept"))
+```
+
+\Large
+
+This type of interval is also known as a **credible interval**. 
+
+A credible interval demarcates the range within which we can be certain with a certain probability that the "true value" of a parameter lies given the data and the model.
+
+**Aside**: This is very different from the frequentist confidence interval, which has 
+the following meaning: If you were (counterfactually) to run the same experiment over and over again,
+say 100 times, then 95% of the 100 confidence intervals you would generate would contain the true value of the parameter. 
+The frequentist confidence interval does not tell you the range over which you can be 95% certain that the true value of the parameter lies:
+the parameter is not a random variable but rather is a point value, so one cannot
+make probability statements about it.
+
+
+
+The percentile interval is a type of credible interval (the most common one), where we assign equal probability mass to each tail. 
+
+We generally report 95% credible intervals. But we can extract any interval; a 73% interval, for example, leaves `r (1.00-.73)/2*100`% of the probability mass on each tail, and we can calculate it like this:
+
+```{r echo=TRUE}
+round(quantile(mu_post,
+   prob=c(0.135,0.865)))
+```
+
+## The influence of priors and sensitivity analysis
+
+\begin{equation}
+\begin{aligned}
+\mu &\sim Uniform(0,5000) \\
+\sigma &\sim Uniform(0, 500) 
+\end{aligned}
+\end{equation}
+
+```{r echo=TRUE}
+priors <- c(set_prior("uniform(0, 5000)", 
+                      class = "Intercept",
+                      lb = 0,
+                      ub = 5000),
+            set_prior("uniform(0, 500)", 
+                      class = "sigma",
+                      lb=0,
+                      ub=500))
+```
+
+
+
+```{r echo=TRUE,cache=TRUE,message=FALSE,results="hide",warning=FALSE}
+m2<-brm(t~1,df_spacebar,prior = priors,
+       iter = 2000, chains = 4,
+       family = gaussian(), 
+       control = list(adapt_delta = 0.99))
+```
+
+
+
+For looking at the results:
+
+\small
+```{r echo=TRUE}
+short_summary(m2)
+```
+\Large
+
+
+In general, we don't want our priors to have too much influence on our
+posterior. 
+
+This is unless we have *very* good reasons for having informative
+priors, such as a very small sample and/or a lot of prior information; an example
+would be if we have data from an impaired population, which makes it hard to increase our sample size. 
+
+
+
+
+We usually center the priors on 0 and we let the
+likelihood dominate in determining the posterior. 
+
+This type of
+prior is sometimes called a *weakly informative prior*. Notice that a uniform prior is
+not a weakly informative prior, it assumes that every value is equally
+likely, zero is as likely as 5000. 
+
+You should always do a 
+*sensitivity analysis* to check how influential the prior is: try different priors and verify that the posterior
+doesn't change drastically. 
+
+# Example 2: Investigating adaptation effects
+
+More realistically, we might have run the small experiment to find out whether the
+participant tended to speedup (practice effect) or slowdown (fatigue effect) while pressing the space bar. 
+
+## Preprocessing the data
+
+  - We need to have data about the number of times the space bar was pressed for each observation, and add it to our list. 
+
+  - It's a good idea to center the number of presses (a covariate) to have a clearer interpretation of the intercept. 
+
+  - In general, centering predictors is always a good idea, for interpretability and for computational reasons. 
+
+  - See the contrast coding chapters in the book for details on this point.
+
+
+
+
+```{r reading_noreading_sb,echo=TRUE}
+df_spacebar <- df_spacebar %>%
+  mutate(c_trial = trial - mean(trial))
+```
+
+## Probability model
+
+Our model changes, because we have a new parameter. 
+
+\begin{equation}
+t_n \sim \mathit{Normal}(\alpha + c\_trial_n \cdot \beta,\sigma)
+\end{equation}
+
+where $n =1 \ldots N$.
+
+We could use the following priors.
+
+\begin{equation}
+\begin{aligned}
+\alpha &\sim Normal(0, 2000) \\
+\beta &\sim Normal(0, 500) \\
+\sigma &\sim Normal(0, 500) \text{ truncated so that } \sigma > 0 \\
+\end{aligned}
+\end{equation}
+
+
+
+We are basically fitting a linear model, $\alpha$ represents the intercept (namely, the grand mean of the RTs), and $\beta$ represents the slope. 
+
+What information are the priors encoding? 
+
+Do the priors make sense?
+
+
+
+
+We'll write this in brms as follows.
+
+```{r results="hide",echo=TRUE,warning=FALSE,message=FALSE}
+priors <- c(set_prior("normal(0, 2000)", 
+                      class = "Intercept"),
+            set_prior("normal(0, 500)", 
+                      class = "b",
+                      coef="c_trial"),
+            set_prior("normal(0, 500)", 
+                      class = "sigma"))
+```
+
+
+```{r cache=TRUE,echo=TRUE,warning=FALSE,message=FALSE}
+m2<-brm(t~1+c_trial,df_spacebar,
+        prior = priors,
+       iter = 2000, chains = 4,family = gaussian(), 
+       control = list(adapt_delta = 0.99))
+```
+
+## Posteriors
+
+
+```{r fig.height=3,message=FALSE,warning=FALSE}
+library(bayesplot)
+#bayesplot::theme_default()
+stanplot(m2,type="hist")
+```
+
+
+We'll need to examine what happens with $\beta$. The summary gives us the relevant information.
+
+
+\small
+```{r echo=TRUE,warning=FALSE,message=FALSE}
+m2_post_samp_b <- posterior_samples(m2, "^b")
+str(m2_post_samp_b)
+beta_samples <- m2_post_samp_b$b_c_trial 
+beta_mean<-mean(beta_samples)
+quantiles_beta <- quantile(beta_samples,
+                           prob=c(0.025,0.975))
+beta_low<-quantiles_beta[1]
+beta_high<-quantiles_beta[2]
+```
+
+\Large
+
+Examine what happens with $\beta$. The summary gives us the relevant information:
+
+\small
+```{r echo=TRUE,warning=FALSE,message=FALSE}
+m2_post_samp_b2 <- posterior_summary(m2, "^b")
+round(m2_post_samp_b2,2)
+```
+\Large
+
+Let's say we know that our model is working as expected, since we already used simulated data to test the recovery of the parameters.
+
+## Posterior predictive checks
+
+To do posterior predictive checks for our last example, using `brms`, we need to do:
+
+```{r echo=TRUE,fig.height=3,fig.cap="\\label{fig:m2ppc}Posterior predictive check of model m2.",warning=FALSE,message=FALSE}
+pp_check(m2,nsamples=100)+
+  theme(text = element_text(size=16),
+        legend.text=element_text(size=16))
+```
+
+## Using the log-normal likelihood
+
+```{r echo=TRUE}
+mu <- 6
+sigma <- 0.5
+N <- 100000
+# Generate N random samples 
+## from a log-normal distribution
+sl <- rlnorm(N, mu, sigma)
+lognormal_plot <- ggplot(data.frame(samples=sl), 
+aes(sl)) + geom_histogram() + 
+      ggtitle("Log-normal distribution\n") + 
+      ylim(0,25000) + xlim(0,2000) + theme_bw()
+# Generate N random samples 
+# from a normal distribution, 
+# and then exponentiate them
+sn <- exp(rnorm(N, mu, sigma))
+normalplot <- ggplot(data.frame(samples=sn), 
+aes(sn)) + geom_histogram() + 
+      ggtitle("Exponentiated samples of
+      \n a normal distribution") + 
+      ylim(0,25000) + xlim(0,2000) + theme_bw()
+```
+
+
+```{r lognormal,echo=TRUE,fig.height=3,fig.height=2,fig.width=3.5, fig.show='hold', message=FALSE, warning=FALSE,fig.cap="\\label{fig:logndemo}The log-normal distribution."}
+
+plot(lognormal_plot)
+```
+
+
+```{r explognormal,fig.height=3,fig.height=2,fig.width=3.5, fig.show='hold', message=FALSE, warning=FALSE,fig.cap="\\label{fig:explogndemo}Exponentiated samples from a log-normal distribution."}
+plot(normalplot)
+```
+
+## Re-fit the model assuming a log-normal likelihood
+
+If we assume that RTs are log-normally distributed, we'll need to change our model:
+
+\begin{equation}
+t_n \sim LogNormal(\alpha + c\_trial_n \cdot \beta,\sigma)
+\end{equation}
+
+where $n =1 \ldots N$
+
+
+But now the scale of our priors needs to change! They are no longer in milliseconds.
+
+\begin{equation}
+\begin{aligned}
+\alpha &\sim Normal(0, 10) \\
+\beta &\sim Normal(0, 1) \\
+\sigma &\sim Normal(0, 2) \text{ truncated so that } \sigma > 0 \\
+\end{aligned}
+\end{equation}
+
+
+```{r results="hide",cache=TRUE,echo=TRUE}
+priors_log <- c(set_prior("normal(0, 10)", 
+                      class = "Intercept"),
+            set_prior("normal(0, 1)", 
+                      class = "b",
+                      coef="c_trial"),
+            set_prior("normal(0, 2)", 
+                      class = "sigma"))
+```
+
+```{r cache=TRUE,echo=TRUE}
+m2_logn<-brm(t~1+ c_trial,df_spacebar,
+             prior = priors_log,
+       iter = 2000, chains = 4,family = lognormal(), 
+       control = list(adapt_delta = 0.99,
+                      max_treedepth=15))
+```
+
+
+## Summarizing the posterior and inference
+
+Next, we turn to the question of what we can report as our results, and what we can conclude from the data.
+
+```{r, echo=FALSE, results="hide", warning=FALSE}
+#options(scipen=999, digits=6)
+
+alpha_samples<-posterior_samples(m2_logn,variable="b_Intercept")$b_Intercept
+
+beta_samples<-posterior_samples(m2_logn,variable="b_c_trial")$b_c_trial
+
+beta_ms<-exp(alpha_samples+beta_samples)-exp(alpha_samples)
+
+(beta_msmean <- mean(beta_ms))
+(beta_mslow <- quantile(beta_ms,prob=0.025))
+(beta_mshigh <- quantile(beta_ms,prob=0.975))
+
+beta_mean <- mean(beta_samples)
+beta_low <- quantile(beta_samples,prob=0.025)
+beta_high <- quantile(beta_samples,prob=0.975)
+```
+
+  - We can summarize the posterior and do inference as discussed in Example 1. 
+
+  - If we want to talk about the effect estimated by the model, we summarize the posterior of $\beta$ in the following way: 
+
+  - $\hat\beta = `r beta_msmean`$, 95% CrI = $[ `r beta_mslow` , `r beta_mshigh` ]$, $P(\beta >0)  \approx `r mean(beta_samples > 0)`$
+
+## Posterior predictive checks and distribution of summary statistics 
+
+We can now verify whether our predicted datasets look more similar to the real dataset. See rgw figure below.
+
+```{r message=FALSE, warning=FALSE, fig.height=4,fig.cap="\\label{fig:lognppc}Posterior predictive check."}
+pp_check(m2_logn, nsamples = 100)+
+  theme(text = element_text(size=16),
+  legend.text=element_text(size=16))
+```
+
+```{r echo=TRUE,message=FALSE,results="hide",cache=TRUE}
+m2_logn<-brm(t~1+c_trial,df_spacebar,
+             prior = priors_log,
+       iter = 2000, chains = 4,
+       family = lognormal(),
+       control = list(adapt_delta = 0.99,
+                      max_treedepth=15))
+```
+
+# General workflow
+
+This is the general workflow that we suggest for a Bayesian model.
+
+1. Define the full probability model:
+    a. Decide on the likelihood.
+    b. Decide on the priors.
+    c. Write the `brms` or Stan model.
+2. Do prior predictive checks to determine if priors make sense.    
+3. Check model using simulated data:
+    a. Simulate data with known values for the parameters.
+    b. Fit the model and do MCMC diagnostics.
+    c. Verify that it recovers the parameters from simulated data.
+4. Fit the model with real data and do MCMC diagnostics.
+5. Evaluate the model's fit (e.g., posterior predictive checks, distribution of summary statistics). This may send you back to 1.
+6. Inference/prediction/decisions.
+7. Conduct model comparison if there's an alternative model (to be discussed later).
+
