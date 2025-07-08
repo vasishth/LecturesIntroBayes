@@ -693,19 +693,19 @@ This gives us the posterior **up to proportionality**:
 
 \begin{equation}
 \begin{split}
-\hbox{Posterior} \propto &  \exp(-n\lambda)  \lambda^{\sum_i^{n} x_i} \lambda^{a-1}\exp(-b\lambda)\\
-=& \lambda^{a-1+\sum_i^{n} x_i} \exp(-\lambda (b+n))
+\hbox{Posterior}~\propto~&  \exp(-n\lambda)  \lambda^{\sum_i^{n} x_i} \lambda^{a-1}\exp(-b\lambda)\\
+=~& \lambda^{a-1+\sum_i^{n} x_i} \exp(-\lambda (b+n))
 \end{split}
 \end{equation}
 
 \begin{equation}
 \begin{split}
-\hbox{Posterior} \propto &  \exp(-n\lambda)  \lambda^{\sum_i^{n} x_i} \lambda^{a-1}\exp(-b\lambda)\\
-=& \lambda^{a-1+\sum_i^{n} x_i} \exp(-\lambda (b+n))
+\hbox{Posterior}~\propto~ &  \exp(-n\lambda)  \lambda^{\sum_i^{n} x_i} \lambda^{a-1}\exp(-b\lambda)\\
+=~& \lambda^{a-1+\sum_i^{n} x_i} \exp(-\lambda (b+n))
 \end{split}
 \end{equation}
 
-- The Gamma distribution in general is $Gamma(a,b) \propto \lambda^{a-1} \exp(-\lambda b)$. 
+- The Gamma distribution for $\lambda$ in general is $Gamma(\lambda | a,b) \propto  \exp(-\lambda b) \lambda^{a-1}$. 
 - So it's enough to state the above as a Gamma distribution with some updated parameters a*, b*.
 
 If we equate $a^{*}-1=a-1+\sum_i^{n} x_i$ and $b^{*} = b+n$, we can rewrite the above as:
@@ -719,7 +719,7 @@ If we equate $a^{*}-1=a-1+\sum_i^{n} x_i$ and $b^{*} = b+n$, we can rewrite the 
 - We can find a constant $k$ such that the above is a proper probability density function, i.e.:
 
 \begin{equation}
-k \int_{0}^{\infty} \lambda^{a^{*}-1} \exp(-\lambda b^{*})=1
+k \int_{0}^{\infty}  \exp(-\lambda b^{*}) \lambda^{a^{*}-1}=1
 \end{equation}
 - Thus, the posterior has the form of a Gamma distribution with parameters 
 $a^{*}=a+\sum_i^{n} x_i, b^{*}=b+n$. Hence the Gamma distribution is a conjugate prior for the Poisson.
@@ -745,9 +745,10 @@ Gamma(6+`r sum(c(2,4,3,6,1))`,2+5)\\
 - The mean of the posterior is $\frac{a*}{b*}=\frac{22}{7} = `r round(22/7,2)`$
 - The variance is $\frac{a*}{b*^{2}}=\frac{22}{7^2}= `r round(22/(7^2),2)`$
 
+### Summary so far 
 
 -  We saw two examples of conjugate analyses: the binomial-beta and the Poisson-gamma.
-- In each example, we derived the posterior given a likelihood and a prior.
+- In each example, we analytically derived the posterior given a likelihood and a prior.
 
 ## The posterior's mean is a weighted mean of the MLE and the prior mean
 
@@ -827,9 +828,9 @@ as $n$ approaches infinity, the posterior variance will approach zero: more data
 - When a lot of data are available, the MLE will dominate in determining the posterior mean.
 - Given sparse data, informative priors based on expert knowledge, existing data, or meta-analysis will play an important role. 
 
+## The next step: Computational Bayes
 
-
-- In realistic data analysis settings, we can't use these simple conjugate analyses
+- In realistic data analysis settings, we can't use these simple conjugate analyses.
 - For such cases, we need to use MCMC (Markov chain Monte Carlo) sampling techniques so that we can sample from the posterior distributions of the parameters.
  
 Some sampling approaches are:
