@@ -135,7 +135,7 @@ $y \stackrel{iid}{\sim} Normal(\mu,\sigma)$
 
 This is the simple linear model:
 
-$y = \mu + \varepsilon \hbox{ where } \varepsilon \sim Normal(0,\sigma)$
+$y = \mu + \varepsilon \hbox{ where } \varepsilon \stackrel{iid}{\sim} Normal(0,\sigma)$
 
 There are two parameters, $\mu,\sigma$, so we need priors on these. 
 We expand on this simple model next.
@@ -148,7 +148,7 @@ The way we will conduct data analysis is as follows:
   - Specify **prior distributions** for model parameters.
   - Evaluate whether model makes sense, using simulated data, **prior predictive** and **posterior predictive** checks, and (if you want to claim a discovery) calibrating true and false discovery rates.
   - Using software, derive **marginal posterior distributions** for parameters given a likelihood function and prior density. I.e., simulate parameters to get **samples from posterior distributions** of parameters using some **Markov Chain Monte Carlo (MCMC) sampling algorithm**.
-  - Check that the model converged using **model convergence** diagnostics,
+  - Check that the model converged using **model convergence** diagnostics.
   - Summarize **posterior distributions** of parameter samples and make your scientific decision.
 
 We will now work through some specific examples to illustrate how the data analysis process works.
@@ -176,7 +176,7 @@ head(df_spacebar)
 
 ## Visualizing the data
 
-It is a good idea to look at the distribution of the data before doing anything else. See Figure \ref{fig:m1visualize}.
+It is a good idea to look at the distribution of the data before doing anything else. See the figure below.
 
 ```{r fig.height=4,fig.cap="\\label{fig:m1visualize}Visualizing the data."}
 plot(density(df_spacebar$t),
@@ -192,7 +192,7 @@ Let's model the data with the following assumptions:
 
 - There is a true underlying time, $\mu$, that the participant needs to press the space-bar.
 - There is some noise around $\mu$.
-- The noise is normally distributed (this assumption is questionable given the skew but; we fix this assumption later).
+- The data are normally distributed with standard deviation $\sigma$ (the normality assumption is questionable given the skew but; we fix this assumption later).
 
 
 This means that the likelihood for each observation $n$ will be:
@@ -223,7 +223,7 @@ We are going to use the following priors for the two parameters in this model:
 \end{equation}
 
 
-In order to decide on a prior for the parameters, always visualize them first. See the Figure below.
+In order to decide on a prior for the parameters, always visualize them first. See the figure below.
 
 ```{r echo=FALSE,fig.height=3,fig.cap="\\label{fig:m1priors}Visualizing the priors for example 1."}
 op<-par(mfrow=c(1,2),pty="s")
@@ -242,16 +242,18 @@ plot(x,dnorm(x,mean=0,sd=500),type="l",
 
 With these priors, we are going to generate something called the **prior predictive distribution**. This helps us check whether the priors make sense.
 
-Formally, we want to know the density $f(\cdot)$ of data points $t_1,\dots,t_n$, given a vector of priors $\Theta$. In our example, $\Theta=\langle\mu,\sigma \rangle$. The prior predictive density is:
+Formally, we want to know the density $p(\cdot)$ of data points $y_{pred_1},\dots,y_{pred_N}$ from a data set $\boldsymbol{y_{pred}}$ of length $N$, given a vector of priors $\boldsymbol{\Theta}$ and our likelihood $p(\cdot|\boldsymbol{\Theta})$; (in our example, $\boldsymbol{\Theta}=\langle\mu,\sigma \rangle$). The prior predictive density is written as follows:
 
 \begin{equation}
-f(t_1,\dots,t_n)= \int f(t_1)\cdot f(t_2)\cdots f(t_n) f(\Theta) \, d\Theta 
+\begin{aligned}
+p(\boldsymbol{y_{pred}}) &= p(y_{pred_1},\dots,y_{pred_n})\\
+&= \int_{\boldsymbol{\Theta}} p(y_{pred_1}|\boldsymbol{\Theta})\cdot p(y_{pred_2}|\boldsymbol{\Theta})\cdots p(y_{pred_N}|\boldsymbol{\Theta}) p(\boldsymbol{\Theta}) \, \mathrm{d}\boldsymbol{\Theta}
+\end{aligned}
 \end{equation}
 
+In essence, the vector of  parameters is integrated out. This yields the probability distribution of possible data sets given the priors and the likelihood, *before any observations are taken into account*.
 
-
-
-In essence, we integrate out the parameters. Here is one way to do it in R:
+Here is one way to do it in R:
 
   - Take one sample from each of the priors
   - Generate *nobs* data points using those samples
@@ -514,6 +516,9 @@ m1brms<-brm(t~1,df_spacebar,prior = priors,
        control = list(adapt_delta = 0.99))
 ```
 
+The `adapt_delta = 0.99` specification is a control parameter that controls the HMC sampler's behavior.
+More details are in the textbook.
+
 ### Summarizing the posteriors, and convergence diagnostics
 
 A graphical summary of posterior distributions of model m1 is shown below:
@@ -538,14 +543,6 @@ An alternative way to plot is shown below.
 plot(m1brms)
 ```
 
-## Fitting the brms model on simulated data
-
-```{r fit_sim,echo=TRUE,message=FALSE,warning=FALSE,eval=FALSE,cache=TRUE}
-m1_fakebrms<-brm(y~1,sim_data,prior = priors,
-       iter = 2000, chains = 4,family = gaussian(), 
-       control = list(adapt_delta = 0.99))
-```
-
 ### Summarizing the posterior distribution
 
 We are assuming that there's a true underlying time it takes to press the space bar, $\mu$, and there is normally distributed noise with a Normal(0,$\sigma$) truncated at 0 that generates the different button tapping times. 
@@ -553,7 +550,7 @@ All this is encoded in our likelihood by assuming that the tapping times are nor
 
 
 
-The objective of the Bayesian model is to learn about the plausible values of $\mu$, or in other words, to get a distribution that encodes what we know about the true mean of the distribution of RTs, and about the true standard deviation, $\sigma$, of the distribution of RTs.
+The objective of the Bayesian model is to learn about the plausible values of $\mu$, or in other words, to get a distribution that encodes what we know about the true mean of the distribution of button-tapping times, and about the true standard deviation, $\sigma$, of the distribution of button-tapping times.
 
 
 
@@ -703,9 +700,9 @@ participant tended to speedup (practice effect) or slowdown (fatigue effect) whi
 
 ## Preprocessing the data
 
-  - We need to have data about the number of times the space bar was pressed for each observation, and add it to our list. 
+  - We need to add to our list information about the trial id in each observation. 
 
-  - It's a good idea to center the number of presses (a covariate) to have a clearer interpretation of the intercept. 
+  - It's a good idea to center the trial id (a covariate) to have a clearer interpretation of the intercept. 
 
   - In general, centering predictors is always a good idea, for interpretability and for computational reasons. 
 
@@ -741,7 +738,7 @@ We could use the following priors.
 
 
 
-We are basically fitting a linear model, $\alpha$ represents the intercept (namely, the grand mean of the RTs), and $\beta$ represents the slope. 
+We are fitting a linear model, $\alpha$ represents the intercept (namely, the grand mean of the button-tapping times), and $\beta$ represents the slope. 
 
 What information are the priors encoding? 
 
@@ -780,7 +777,7 @@ stanplot(m2,type="hist")
 ```
 
 
-We'll need to examine what happens with $\beta$. The summary gives us the relevant information.
+The posterior distribution of $\beta$ is of primary interest here. The summary gives us the relevant information.
 
 
 \small
@@ -806,11 +803,9 @@ round(m2_post_samp_b2,2)
 ```
 \Large
 
-Let's say we know that our model is working as expected, since we already used simulated data to test the recovery of the parameters.
-
 ## Posterior predictive checks
 
-To do posterior predictive checks for our last example, using `brms`, we need to do:
+To do posterior predictive checks for our example above using `brms`, we need to type:
 
 ```{r echo=TRUE,fig.height=3,fig.cap="\\label{fig:m2ppc}Posterior predictive check of model m2.",warning=FALSE,message=FALSE}
 pp_check(m2,nsamples=100)+
@@ -855,7 +850,7 @@ plot(normalplot)
 
 ## Re-fit the model assuming a log-normal likelihood
 
-If we assume that RTs are log-normally distributed, we'll need to change our model:
+If we assume that buttom-tapping times are log-normally distributed, we'll need to change our model:
 
 \begin{equation}
 t_n \sim LogNormal(\alpha + c\_trial_n \cdot \beta,\sigma)
@@ -893,18 +888,27 @@ m2_logn<-brm(t~1+ c_trial,df_spacebar,
                       max_treedepth=15))
 ```
 
+\small
+```{r}
+m2_logn_post_samp_b2 <- posterior_summary(m2_logn, "^b")
+round(m2_logn_post_samp_b2,4)
+```
 
+\Large
 ## Summarizing the posterior and inference
 
 Next, we turn to the question of what we can report as our results, and what we can conclude from the data.
 
-```{r, echo=FALSE, results="hide", warning=FALSE}
+We are going to back-transform the posterior distributions back to the ms scale from the log scale:
+
+```{r results="hide", warning=FALSE}
 #options(scipen=999, digits=6)
 
 alpha_samples<-posterior_samples(m2_logn,variable="b_Intercept")$b_Intercept
 
 beta_samples<-posterior_samples(m2_logn,variable="b_c_trial")$b_c_trial
 
+## back-transformation:
 beta_ms<-exp(alpha_samples+beta_samples)-exp(alpha_samples)
 
 (beta_msmean <- mean(beta_ms))
@@ -920,11 +924,13 @@ beta_high <- quantile(beta_samples,prob=0.975)
 
   - If we want to talk about the effect estimated by the model, we summarize the posterior of $\beta$ in the following way: 
 
-  - $\hat\beta = `r beta_msmean`$, 95% CrI = $[ `r beta_mslow` , `r beta_mshigh` ]$, $P(\beta >0)  \approx `r mean(beta_samples > 0)`$
+  - $\hat\beta = `r round(beta_msmean,2)`$ ms, 95% CrI = $[ `r round(beta_mslow,2)` , `r round(beta_mshigh,2)` ]$, $P(\beta >0)  \approx `r round(mean(beta_samples > 0),2)`$
+
+You probably do not want to report your posterior up to too many significant digits. Just use common sense.
 
 ## Posterior predictive checks and distribution of summary statistics 
 
-We can now verify whether our predicted datasets look more similar to the real dataset. See rgw figure below.
+We can now verify whether our predicted datasets look more similar to the real dataset. See the figure below.
 
 ```{r message=FALSE, warning=FALSE, fig.height=4,fig.cap="\\label{fig:lognppc}Posterior predictive check."}
 pp_check(m2_logn, nsamples = 100)+

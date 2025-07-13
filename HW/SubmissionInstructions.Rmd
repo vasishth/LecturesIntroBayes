@@ -1,0 +1,38 @@
+---
+title: "Homework Instructions"
+author: "Shravan Vasishth"
+date: ""
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+I strongly encourage you to adopt either R Markdown or Quarto (see documentation by googling for these) for doing all your coding. There are many advantages to a reproducible workflow, as discussed in my reproducible workflows lecture: 
+
+https://vasishth.github.io/ReproducibleWorkflows/
+
+The homework submissions should be a single pdf file. If you are unable to compile an Rmd file to pdf, first create an html file, and then print it to pdf format. 
+
+Before working with R Markdown or Quarto, be sure to read the documentation and/or watch a quick online tutorial.
+
+
+# Advice on using R Markdown for Bayesian modeling
+
+- Make sure you start a fresh R session
+- Make sure that RStudio does not create any hidden files when closing a session
+- Work incrementally (chunk by chunk)
+- All computationally intensive chunks involving `brms` (and later, Stan) code should have the header
+
+```
+message = FALSE, results = "hide", cache=TRUE
+```
+
+cache=TRUE ensures that you don't need to re-compute everything again once you recompile an Rmd file; it creates a directory in your present working directory that stores results that are loaded the next time you compile your file. message=FALSE switches off the verbose brms/Stan output. results="hide" will also suppress a lot of junk intermediate output as the model is compiled and run.
+
+Occasionally, the cache directory gets corrupted. If the compiled Rmd seems to show weird results, sometimes this can be due to a corrupted cache. Just delete the cache and try again (I should say that this problem has recently stopped happening for me).
+
+

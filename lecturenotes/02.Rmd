@@ -3,8 +3,8 @@ title: "Chapter 2: Introduction to Bayesian Data Analysis"
 author: "Shravan Vasishth (vasishth.github.io)"
 date: "June 2025"
 output: 
-  html_document:
-    theme: flatly
+  pdf_document
+toc: true
 fontsize: 12pt
 geometry: "a4paper,right=8.5cm,left=1cm,bottom=2cm,top=2cm"
 ---
@@ -839,4 +839,6 @@ Some sampling approaches are:
 - Metropolis-Hastings
 - Hamiltonian Monte Carlo
 
-Youtube lecture on sampling algorithms: https://youtu.be/ymuLt6LBTwY
+Youtube lecture on sampling algorithms: 
+
+https://youtu.be/ymuLt6LBTwY
