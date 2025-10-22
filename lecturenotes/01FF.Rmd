@@ -1,0 +1,1041 @@
+---
+title: "Preamble: Frequentist Foundations"
+author: "Shravan Vasishth (vasishth.github.io)"
+date: "October 2025"
+output: 
+   pdf_document
+toc: true
+header-includes:
+   - \usepackage{tikz}
+   - \usetikzlibrary{trees}
+fontsize: 12pt
+geometry: "a4paper,right=8.5cm,left=1cm,bottom=2cm,top=2cm"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE, results='asis'}
+cat('
+<style>
+body {
+  margin-right: 120px;
+}
+</style>
+')
+```
+
+\Large
+
+\newpage
+
+# Textbook
+
+Introduction to Bayesian Data Analysis for Cognitive Science
+
+Nicenboim, Schad, Vasishth
+
+- Online version:
+
+https://bruno.nicenboim.me/bayescogsci/
+
+- Source code:
+
+https://github.com/bnicenboim/bayescogsci
+
+- Physical book:
+
+[here](https://www.routledge.com/Introduction-to-Bayesian-Data-Analysis-for-Cognitive-Science/Nicenboim-Schad-Vasishth/p/book/9780367359331)
+
+**Be sure to read the textbook's chapter 1 before watching this lecture**.
+
+# Introduction
+
+This lecture covers some basic ideas in frequentist statistics that everyone should know. These ideas are very useful as background knowledge when studying Bayesian methods.
+
+# Reminder from chapter 1: Maximum likelihood estimates (MLEs)
+
+For the normal distribution, where $X \sim N(\mu,\sigma)$, and given $i=1,\dots, n$ independent data points, we can get MLEs of $\mu$ and $\sigma$ by computing:
+
+\begin{equation}
+  \hat \mu = \frac{1}{n}\sum_{i=1}^n x_i = \bar{x}  
+\end{equation}
+
+and
+
+\begin{equation}
+	\hat \sigma ^2 = \frac{1}{n}\sum_{i=1}^n  (x_i-\bar{x})^2 = s^2
+\end{equation}
+
+you will sometimes see the "unbiased" estimate (and this is what `R` computes) but for large sample sizes the difference is not important:
+
+\begin{equation}
+  \hat \sigma ^2 = \frac{1}{n-1}\sum_{i=1}^n (x_i-\bar{x})^2 = s^2
+\end{equation}
+
+I use $\bar{x}$ and $s$ to represent the **estimates** of the mean and standard deviation from a particular data-set. $\hat\mu$ and $\hat\sigma$ are the formulas (analytically derived) for estimating the mean and standard deviation, and are called the **estimators**. 
+
+The significance of these MLEs is that, having assumed a particular underlying pdf, we can estimate the (unknown) parameters (the mean and variance/standard deviation) of the distribution that generated our particular data. 
+
+This leads us to the distributional properties of the mean **under (hypothetical) repeated sampling**.
+
+# The central limit theorem
+
+For large enough sample sizes, the sampling distribution of the means will be approximately normal, regardless of the underlying distribution (as long as this distribution has a mean and variance defined for it).
+
+- So, from a sample of size $n$, and sd $\sigma$, we can compute **the standard deviation of the sampling distribution of the means**.
+- We will call this standard deviation the **standard error**.
+
+$SE = \frac{\sigma}{\sqrt{n}}$
+
+When estimated from data, we will write
+
+$SE = \frac{s}{\sqrt{n}}$
+
+
+I say **estimated** because we are estimating SE using an estimate of $\sigma$.
+
+The estimated standard error allows us to define a so-called \textbf{95\% confidence interval}:
+
+\begin{equation}
+\bar{x} \pm 1.96 SE
+\end{equation}
+
+So, for a given sample mean, we define a 95\% confidence interval as follows:
+
+\begin{equation}
+\bar{x} \pm 1.96 \frac{s}{\sqrt{n}}
+\end{equation}
+
+I usually just write:
+
+\begin{equation}
+\bar{x} \pm 2 \frac{s}{\sqrt{n}}
+\end{equation}
+
+Example with simulated data:
+
+```{r}
+n<-100
+x<-rnorm(n,mean=500,sd=100)
+mu_hat<-mean(x)
+hat_sigma<-sd(x)
+## lower bound:
+mu_hat-(2*hat_sigma/sqrt(n))
+## upper bound:
+mu_hat+(2*hat_sigma/sqrt(n))
+```
+
+# What does the 95\% CI mean?
+
+If you take repeated samples from a particular distribution, and compute the CI each time, 95\% of those repeatedly computed CIs will contain the true population mean.
+
+```{r}
+nsim<-100
+mu<-0
+sigma<-1
+lower<-rep(NA,nsim)
+upper<-rep(NA,nsim)
+for(i in 1:nsim){
+  x<-rnorm(n,mean=mu,sd=sigma)
+  lower[i]<-mean(x) - 2 * sd(x)/sqrt(n)
+  upper[i]<-mean(x) + 2 * sd(x)/sqrt(n)
+}
+```
+
+```{r}
+## check how many CIs contain mu:
+CIs<-ifelse(lower<mu & upper>mu,1,0)
+table(CIs)
+## approx. 95% of the CIs contain true mean:
+table(CIs)[2]/sum(table(CIs))
+```
+
+Graphical visualization:
+
+```{r echo=FALSE}
+se <- function(x)
+      {
+        y <- x[!is.na(x)] # remove the missing values, if any
+        sqrt(var(as.vector(y))/length(y))
+}
+ci <- function (scores){
+m <- mean(scores,na.rm=TRUE)
+stderr <- se(scores)
+len <- length(scores)
+upper <- m + qt(0.975, df=len-1) * stderr 
+lower <- m + qt(0.025, df=len-1) * stderr 
+return(data.frame(lower=lower,upper=upper))
+}
+
+lower <- rep(NA,100)
+upper <- rep(NA,100)
+
+for(i in 1:100){ 
+  sample <- rnorm(100,mean=0,sd=1)
+  lower[i] <- ci(sample)$lower
+  upper[i] <- ci(sample)$upper
+}
+  
+cis <- cbind(lower,upper)
+
+store <- rep(NA,100)
+
+pop.mean<-0
+pop.sd<-1
+
+for(i in 1:100){ 
+  sample <- rnorm(100,mean=pop.mean,sd=pop.sd)
+  lower[i] <- ci(sample)$lower
+  upper[i] <- ci(sample)$upper
+  ## if pop.mean is larger than lower bound and
+  ## smaller than upper bound, the CI contains
+  ## the pop.mean, so mark as TRUE:
+  if(lower[i]<pop.mean & upper[i]>pop.mean){
+    store[i] <- TRUE} else {
+      store[i] <- FALSE}
+}
+
+## need this for the plot below:
+cis <- cbind(lower,upper)
+
+main.title<-"95% CIs in 100 repeated samples"
+
+line.width<-ifelse(store==FALSE,2,1)
+cis<-cbind(cis,line.width)
+x<-1:100
+y<-seq(-2,2,length.out=100)
+plot(x,y,type="n",xlab="i-th repeated sample",
+     ylab="Scores",main=main.title)
+abline(0,0,lwd=2)
+x0<-x
+x1<-x
+arrows(x0,y0=cis[,1],
+       x1,y1=cis[,2],length=0,lwd=cis[,3])
+```
+
+There is a correspondence between the **correctly computed** frequentist CI and the hypothesis testing procedure (see below).
+
+Although some people use Bayesian credible intervals to carry out hypothesis tests (I have also done this), this is technically not correct because we do not automatically know the frequentist properties of the Bayesian credible interval. To carry out hypothesis tests in a Bayesian approach, Bayes factors or k-fold cross validation are needed. See the textbook chapters on model comparison for more details.
+
+## Example of incorrectly computed CIs
+
+If you have repeated measures/dependent data, then the correct CI is computed after aggregation such that you have only one data point per subject per condition. 
+
+Consider these repeated measures data:
+
+```{r}
+library(bcogsci)
+data("df_gg05_rc")
+head(df_gg05_rc)
+## 8 data points per subject per condition:
+t(xtabs(~subj+condition,df_gg05_rc))
+```
+
+Incorrectly computed CIs per condition:
+
+```{r}
+(means<-with(df_gg05_rc,tapply(RT,condition,mean)))
+(sds<-with(df_gg05_rc,tapply(RT,condition,sd)))
+## what should n be? 
+(n<- length(unique(df_gg05_rc$subj))) 
+## wrong lower bound for objgap condition:
+means[1]-2*sds[1]/sqrt(n)
+## wrong upper bound:
+means[1]+2*sds[1]/sqrt(n)
+```
+
+Correctly computed CIs:
+
+```{r}
+agg_gg05<-aggregate(RT~subj+condition,mean,
+                           data=df_gg05_rc)
+t(xtabs(~subj+condition,agg_gg05))
+
+## Correct CIs:
+(means<-with(agg_gg05,tapply(RT,condition,mean)))
+(sds<-with(agg_gg05,tapply(RT,condition,sd)))
+## what should n be? 
+(n<- length(unique(agg_gg05$subj))) 
+## correct lower bound for objgap condition:
+means[1]-2*sds[1]/sqrt(n)
+## correct upper bound:
+means[1]+2*sds[1]/sqrt(n)
+```
+
+# The t-test
+
+## The hypothesis test
+
+Suppose we have a random sample of size $n$, and the data come from a $N(\mu,\sigma)$ distribution,
+and the data are independent and identically distributed (for now). 
+
+We can estimate sample mean $\bar{x}=\hat \mu$ and and sample standard deviation 
+$s=\hat\sigma$, which in turn allows us to estimate **the sampling distribution of the mean under (hypothetical) repeated sampling** (thanks to the central limit theorem):
+
+\begin{equation}
+N(\bar{x},\frac{s}{\sqrt{n}})
+\end{equation}
+
+The NHST approach is to set up a null hypothesis that $\mu$ has some fixed value. For example:
+
+\begin{equation}
+H_0: \mu = \mu_0 = 0
+\end{equation}
+
+This amounts to assuming that the true distribution of sample means is (approximately) normally distributed and centered at 0, **with the standard error estimated from the data**.
+
+The intuitive idea is that 
+
+- if the sample mean $\bar{x}$ is "near" the hypothesized $\mu$ (here, 0), the data are (possibly) "consistent with'' the null hypothesis distribution.
+- if the sample mean $\bar{x}$ is far from the hypothesized $\mu$, the data are inconsistent with the null hypothesis distribution.
+
+We formalize "near" and "far" by determining the value of the number $t$, which represents how many  standard errors the sample mean is distant from the hypothesized mean:
+
+\begin{equation}
+t \times SE = \bar{x} - \mu 
+\end{equation}
+
+The above equation quantifies the distance of sample mean from $\mu$ in SE units.
+
+So, given a sample and null hypothesis mean $\mu$, we can compute the quantity: 
+
+\begin{equation}
+t  = \frac{\bar{x} - \mu}{SE}
+\end{equation}
+
+We will call this the **observed t-value**.
+
+The random variable T:
+
+\begin{equation}
+T  = \frac{\bar{X} - \mu}{SE}
+\end{equation}
+
+has a t-distribution, which is defined in terms of the sample size $n$. 
+We will express this as: $T \sim t(n-1)$.
+ 
+Note also that, as $n$ approaches infinity, $T\sim N(0,1)$. 
+
+Thus, given a sample size $n$, and given our null hypothesis, we can draw t-distribution corresponding to the null hypothesis distribution.
+
+For large $n$, we could even use N(0,1), although it is traditional  to always use the t-distribution no matter how large $n$ is.
+
+Compare the t-distribution t(21) (solid line) with Normal(0,1) (broken line).
+
+```{r}
+x<-seq(-4,4,by=0.01)
+plot(x,dt(x,df=20),type="l")
+lines(x,dnorm(x),lty=2)     
+```
+
+Now compare the t-distribution t(1000) (solid line) with Normal(0,1) (broken line).
+
+```{r}
+plot(x,dt(x,df=1000),type="l")
+lines(x,dnorm(x),lty=2,col="red")     
+```
+
+
+## The hypothesis testing procedure
+
+So, the null hypothesis testing procedure is:
+
+- Define the null hypothesis: for example, $H_0: \mu = 0$.
+- Given data of size $n$, estimate $\bar{x}$, standard deviation $s$, standard error $s/\sqrt{n}$.
+- Compute the observed t-value:
+
+\begin{equation}
+t_{observed}=\frac{\bar{x}-\mu}{s/\sqrt{n}}
+\end{equation}
+- Reject null hypothesis if the observed t-value is large (defined below).
+
+### Rejection region
+
+So, for large sample sizes, if $\mid t\mid >2$ (approximately), we can reject the null hypothesis. 
+
+For a smaller sample size $n$ (say 42), you can compute the exact critical t-value:
+
+```{r}
+n<-42
+qt(0.025,df=n-1)
+```
+
+This is the **critical t-value** on the **left**-hand side of the t-distribution.
+The corresponding value on the right-hand side is:
+
+```{r}
+qt(0.975,df=n-1)
+```
+
+Their absolute values are of course identical (the distribution is symmetric when the t-distribution is centered on 0).
+
+## The p-value
+
+This is the probability of observing a t-value at least as extreme as the one you observed, **under the assumption that the null hypothesis is true**.
+
+- The p-value does not tell you anything about the specific research hypothesis; you only know how unlikely the observed t-value (or something more extreme) is, **assuming that the null is true**.
+- It does not tell you the probability of the null being true:
+$P(|t| | H_0) \neq P(H_0)$.
+- A significant p-value doesn't necessarily mean that the effect is real or reliable.
+- A non-significant p-value does not necessarily mean that the effect is absent or 0.
+- The multiple comparisons problem (below) complicates the interpretation of the p-value considerably.
+
+The only way to establish whether an effect is "real" or not is by actual replication (holds for Bayes as well).
+
+## R syntax you should know
+
+Given iid data (Note: aggregated!):
+
+```{r}
+OR<-subset(agg_gg05,condition=="objgap")$RT
+SR<-subset(agg_gg05,condition=="subjgap")$RT
+diff<-OR-SR
+## one sample t-test:
+t.test(diff)
+## paired t-test:
+t.test(OR,SR,paired=TRUE)
+```
+
+
+**You should know when to aggregate data to meet the one sample (=paired) t-test's assumptions.**
+
+A very common mistake is to forget or neglect to aggregate the data. The following is wrong:
+
+```{r}
+OR<-subset(df_gg05_rc,condition=="objgap")$RT
+SR<-subset(df_gg05_rc,condition=="subjgap")$RT
+diff<-OR-SR
+## one sample t-test (WRONG):
+t.test(diff)
+## paired t-test (WRONG):
+t.test(OR,SR,paired=TRUE)
+```
+
+Look at the degrees of freedom--they are wrong (we have only 42 subjects, so it should have been 41).
+
+# Type I, II error, power
+
+\begin{tabular}{ccc}
+\hline
+Reality: & $H_0$ TRUE & $H_0$ FALSE \\
+\hline
+Decision: `reject': & $\alpha$ & $1~-~\beta$ \\
+                                     & \textbf{Type I error}                         & \textbf{Power} \\                                      
+                                     & & \\
+\hline
+Decision: `fail to reject': & $1 - \alpha$ & $\beta$ \\                                    &                                 & \textbf{Type II error}\\
+\hline
+\end{tabular}
+
+```{r echo=FALSE}
+## function for plotting AUC:
+plot.prob<-function(x,
+                           x.min,
+                           x.max,
+                           prob,
+                           mean,
+                           sd,
+                           gray.level,main){
+
+        plot(x,dnorm(x,mean,sd), 
+                     type = "l",xlab="",
+             ylab="",main=main)
+        abline(h = 0)
+
+## shade X<x    
+    x1 = seq(x.min, qnorm(prob), abs(prob)/5)
+    y1 = dnorm(x1, mean, sd)
+
+    polygon(c(x1, rev(x1)), 
+            c(rep(0, length(x1)), rev(y1)), 
+            col = gray.level)
+  }
+
+shadenormal<- 
+function (prob=0.5,
+          gray1=gray(0.3),
+          x.min=-6,
+          x.max=abs(x.min),
+          x = seq(x.min, x.max, 0.01),
+          mean=0,
+          sd=1,main="P(X<0)") 
+{
+
+plot.prob(x=x,x.min=x.min,x.max=x.max,
+               prob=prob,
+                      mean=mean,sd=sd,
+     gray.level=gray1,main=main)     
+}
+
+shadenormal(prob=0.025,main="Type I, II error")
+
+x1 <- seq(qnorm(0.975),6,abs(0.975)/5)
+y1 <- dnorm(x1)
+
+polygon(c(x1, rev(x1)), 
+        c(rep(0, length(x1)), rev(y1)), 
+        col = gray(0.3))
+
+x<-seq(-6,6,by=0.1)
+lines(x,dnorm(x,mean=2),col="red",lwd=2)
+abline(v=2)
+abline(v=-2)
+
+x1 <- seq(-2,2,0.01)
+y1 <- dnorm(x1,mean=2)
+
+polygon(c(x1, rev(x1)), 
+        c(rep(0, length(x1)), rev(y1)), 
+        col = "orange")
+```
+
+
+## Computing power
+
+Power, which is calculated **before** a study is conducted, is a function of three variables:
+
+- effect size
+- standard deviation
+- sample size
+
+A quick way to get a ballpark estimate of power is by using the `power.t.test` function in R.
+
+Example: what sample size do we need in a standard within-subjects design (like the two-condition relative clause study mentioned above) to reach 80% power if the true effect size were 15 ms, with a standard deviation of 150 ms?
+
+```{r}
+power.t.test(n=NULL,
+             delta=15,
+             sd=150,
+             sig.level=0.05,
+             power=0.80,
+             alternative="two.sided",
+             type="one.sample",
+             strict=TRUE)
+```
+
+In this example, something close to 800 subjects would be needed to achieve 80% power.
+
+For more complex designs, we use simulation to compute power. See my frequentist textbook draft for more:
+
+https://vasishth.github.io/Freq_CogSci/
+
+# Type M error
+
+If your true effect size is believed to be $D$, 
+then we can compute (apart from statistical power) this error rate, which is defined as follows:
+
+**Type M error**: the expectation of the ratio of the absolute magnitude of the effect to the hypothesized true effect size, given that result is significant. 
+Gelman and Carlin also call this the exaggeration ratio, which is perhaps more descriptive than ``Type M error.''
+
+Here's a visualization of Type M error in action, under low statistical power.
+
+
+```{r echo=FALSE,warning=FALSE,fig.height=6}
+library(ggplot2)
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+  
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+  
+  numPlots = length(plots)
+  
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                     ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+  
+  if (numPlots==1) {
+    print(plots[[1]])
+    
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+    
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+      
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+
+magnifytext<-function(sze=12){
+  theme(plot.title = element_text(lineheight=.8, size=sze,face="bold"))+
+    theme(axis.text=element_text(size=sze),
+          axis.title=element_text(size=sze,face="bold"))+
+    theme(legend.text = element_text(colour="black", size = sze, face = "bold"))+
+    theme(legend.title = element_text(colour="black", size = sze, face = "bold"))
+}
+
+
+set.seed(987654321)
+d<-20
+sd<-150
+lown<-power.t.test(d=d,sd=sd,power=.10,type="one.sample",alternative="two.sided",strict=TRUE)$n
+highn<-power.t.test(d=d,sd=sd,power=.80,type="one.sample",alternative="two.sided",strict=TRUE)$n
+nsim<-50
+tlow<-thigh<-meanslow<-meanshigh<-CIuplow<-CIlwlow<-CIuphigh<-CIlwhigh<-NULL
+critlow<-abs(qt(0.025,df=lown-1))
+crithigh<-abs(qt(0.025,df=highn-1))
+
+for(i in 1:nsim){
+  x<-rnorm(lown,mean=d,sd=sd)
+  meanslow[i]<-mean(x)
+  tlow[i]<-t.test(x)$statistic
+  CIuplow[i]<-mean(x)+critlow*sd(x)/sqrt(length(x))
+  CIlwlow[i]<-mean(x)-critlow*sd(x)/sqrt(length(x))
+  x<-rnorm(highn,mean=d,sd=sd)
+  meanshigh[i]<-mean(x)
+  thigh[i]<-t.test(x)$statistic
+  CIuphigh[i]<-mean(x)+crithigh*sd(x)/sqrt(length(x))
+  CIlwhigh[i]<-mean(x)-crithigh*sd(x)/sqrt(length(x))
+}
+
+ 
+siglow<-ifelse(abs(tlow)>abs(critlow),"p<0.05","p>0.05")
+sighigh<-ifelse(abs(thigh)>abs(crithigh),"p<0.05","p>0.05")
+
+summarylow<-data.frame(means=meanslow,significance=siglow, CIupper=CIuplow, CIlower=CIlwlow)
+summaryhigh<-data.frame(index=1:nsim,means=meanshigh,significance=sighigh, CIupper=CIuphigh, CIlower=CIlwhigh)
+
+
+# re-order data by mean effect size
+summarylow<-summarylow[order(summarylow$means), ]
+summarylow$index<-1:nrow(summarylow)
+summaryhigh<-summaryhigh[order(summaryhigh$means), ]
+summaryhigh$index<-1:nrow(summaryhigh)
+
+p_low<-ggplot(summarylow, aes(y=means, x=index,
+                              shape=significance,  
+                              ymax=CIupper, ymin=CIlower)) + 
+  geom_pointrange()+
+  #coord_flip()+
+  geom_point(size=2.5)+
+  scale_shape_manual(values=c(2, 19))+
+  magnifytext(sze=22)+ 
+  geom_hline(yintercept=20) +
+  theme_bw() + 
+  scale_x_continuous(name = "Sample id")+
+  scale_y_continuous(name = "means",limits=c(-200,200))+
+  labs(title="Effect 20 ms, SD 150, \n n=25, power=0.10")+
+  theme(legend.position="none")+geom_hline(yintercept=0, linetype="dotted")
+
+p_hi<-ggplot(summaryhigh, aes(y=means, x=index,
+                              shape=significance, ymax=CIupper, ymin=CIlower)) + 
+  geom_pointrange()+
+  #coord_flip()+
+  geom_point(size=2.5)+
+  scale_shape_manual(values=c(2, 19))+
+    scale_x_continuous(name = "Sample id")+
+  magnifytext(sze=22)+ 
+  geom_hline(yintercept=d) +
+  theme_bw() + 
+  scale_y_continuous(name = "means",limits=c(-200,200))+
+  labs(title="Effect 20 ms, SD 150, \n n=350, power=0.80")+
+  theme(legend.position=c(0.8,0.25))+geom_hline(yintercept=0, linetype="dotted")
+
+multiplot(p_low,p_hi,cols=1)
+```
+
+# Multiple comparisons inflate Type I error
+
+\begin{tikzpicture}
+  [
+    scale=1,
+    font=\footnotesize,
+    level 1/.style={level distance=12mm,sibling distance=43mm},
+    level 2/.style={level distance=15mm,sibling distance=20mm},
+    level 3/.style={level distance=15mm,sibling distance=10mm},
+    solid node/.style={circle,draw,inner sep=1,fill=black},
+  ]
+
+  \node(0)[solid node]{}
+
+  child{node(1)[solid node,label=left:{$T_{1}, \hbox{fail}$}]{}
+    child{node[solid node,label=left:{$T_{2}, \hbox{fail}$}]{}
+      child{node[solid node,label=below:{$T_{3}, \hbox{fail}$}]{} edge from parent node [left]{$0.95$}}
+      child{node[solid node,label=below:{$T_{3}, \hbox{rej.}$}]{} edge from parent node [right]{$0.05$}}
+      edge from parent node [left]{$0.95$}
+    }
+    child{node[solid node,label=right:{$T_{2}, \hbox{rej.}$}]{}
+      child{node[solid node,label=below:{$T_{3}, \hbox{fail}$}]{} edge from parent node [left]{$0.95$}}
+      child{ node[solid node,label=below:{$T_{3}, \hbox{rej.}$}]{} edge from parent node [right]{$0.05$}}
+      edge from parent node [right]{$0.05$}
+    }
+    edge from parent node [left, yshift=3]{$0.95$}
+  }
+  child{node(2)[solid node,label=right:{$T_{1}, \hbox{rej.}$}]{}
+    child{node[solid node,label=left:{$T_{2}, \hbox{fail}$}]{}
+      child{node[solid node,label=below:{$T_{3}, \hbox{fail}$}]{} edge from parent node [left]{$0.95$}}
+      child{ node[solid node,label=below:{$T_{3}, \hbox{rej.}$}]{} edge from parent node [right]{$0.05$}}
+      edge from parent node [left]{$0.95$}
+    }
+    child{node[solid node,label=right:{$T_{2}, \hbox{rej.}$}]{}
+      child{node[solid node,label=below:{$T_{3}, \hbox{fail}$}]{} edge from parent node [left]{$0.95$}}
+      child{ node[solid node,label=below:{$T_{3}, \hbox{rej.}$}]{} edge from parent node [right]{$0.05$}}
+      edge from parent node [right]{$0.05$}
+    }
+    edge from parent node [right, yshift=3]{$0.05$}
+  };
+
+\end{tikzpicture}
+
+The theoretical probability of rejecting at least one test incorrectly: $1-0.95^3=0.143$.
+
+- It is common practice in linguistics, psychology, and other areas, to carry out multiple t-tests/ANOVA comparisons, fixing Type I error at $0.05$.
+- It seems to be not well-understood (even among established scientists) that multiple comparisons will inflate Type I error.
+
+## Example: $29\times 5 = 145$ tests
+
+![Gouvea et al 2010. Language and Cognitive Processes](figs/gouvea2010.pdf)
+
+Source: Gouvea et al 2010. Language and Cognitive Processes.
+
+## Example: 20 tests
+
+![Liversedge et al., 2024. Cognition.](figs/liversedge2024.pdf)
+
+Source: Liversedge et al., 2024. Cognition.
+
+## Example: At least 18 tests (probably more)
+
+All my own work, published during the period 2002 to 2016, has this Type I inflation problem. 
+
+![Vasishth and Lewis, 2006. Language.](figs/VasishthLewis2006.pdf)
+
+Source: Vasishth and Lewis, 2006. Language.
+
+## Demonstration using simulation 
+
+If we do a single t-test when the null is actually true, our Type I error is 0.05:
+
+```{r}
+nsim<-1000
+pvals<-rep(NA,nsim)
+for(i in 1:nsim){
+  y<-rnorm(10,mean=0,sd=1)
+  pvals[i]<-t.test(y)$p.value
+}
+mean(pvals<0.05)
+```
+
+
+If we do two t-tests when the null in all the analyses is actually true, our Type I error is no longer 0.05:
+
+```{r}
+nsim<-1000
+ntests<-2
+pvals<-matrix(rep(NA,nsim*ntests),ncol=ntests)
+ for(j in 1:ntests){
+     for(i in 1:nsim){
+     y<-rnorm(10,mean=0,sd=1)
+     pvals[i,j]<-t.test(y)$p.value
+  }
+ }
+
+head(pvals)
+```
+
+What is the probability that *at least one of the two tests comes out significant* despite the null being true in both cases?
+
+```{r}
+sig<-rep(NA,nsim)
+for(i in 1:nsim){
+if(pvals[i,1]<0.05 | pvals[i,2]<0.05){
+  sig[i]<-1
+} else {
+  sig[i]<-0
+}
+}
+
+## The probability that at least 
+## one t-test comes out significant:
+mean(sig>0)
+```
+
+This inflation of Type I error is called the multiple comparisons problem.
+
+The more t-tests/F-tests you do, the higher the Type I error.
+
+
+Let's write a function that computes the Type I error when we do n
+hypothesis tests, where n can be 1,2,3,...
+
+The full function is not visible here (see the R source code).
+
+```{r echo=FALSE}
+computeTypeI<-function(ntests=1,nsim=1000,
+                       sample_size=10,
+                       mu=0,sigma=1){
+pvals<-matrix(rep(NA,nsim*ntests),ncol=ntests)
+for(j in 1:ntests){
+    for(i in 1:nsim){
+     y<-rnorm(sample_size,mean=mu,sd=sigma)
+     pvals[i,j]<-t.test(y)$p.value
+  }
+ }
+
+ncols<-ncol(pvals)
+nrows<-nrow(pvals)
+sig<-matrix(rep(NA,ncols*nrows),ncol=ncols)
+
+  for(i in 1:nrows){
+    for(j in 1:ncols){
+    if(pvals[i,j]<0.05){
+      sig[i,j]<-1
+    } else {
+      sig[i,j]<-0
+     }
+   }
+  }
+
+store<-rep(NA,nsim)
+for(i in 1:nsim){
+  if(sum(sig[i,]>0)){
+   store[i]<-1    
+  }
+  else {
+    store[i]<-0
+  }
+}
+return(mean(store>0))
+}
+```
+
+
+Let's test the function with some ntest values.
+
+```{r}
+## ntests=1
+computeTypeI(ntests=1)
+## ntests=2
+computeTypeI(ntests=2)
+## ntests=3
+computeTypeI(ntests=3)
+```
+
+
+Let's plot a figure showing how Type I error will inflate as we increase the number of tests:
+
+```{r cache=TRUE}
+n<-150
+inflation<-rep(NA,n)
+for(i in 1:n){
+  inflation[i]<-computeTypeI(ntests=i)
+}
+```
+
+```{r echo=FALSE,fig.height=4}
+plot(1:n,inflation,type="l",
+     xlab="Number of tests conducted",
+     ylab="Type I error",
+     main="The multiple comparisons problem",
+     ylim=c(0.05,1))
+```
+
+So, once you have done some 100 statistical tests, you are basically **guaranteed** to obtain some significant effect or the other, even if the null were in fact true.
+
+## A solution to the multiple comparisons problem
+
+If working in the frequentist framework, just do a Bonferroni correction. If you do n tests, the new $\alpha$ is 0.05/n.
+
+## Comparison to Bayes
+
+In the classical Bayesian framework, there is no concept of Type I/II error. There, the focus is rather on **uncertainty quantification**. More on that later.
+
+Of course, one can think about the frequentist properties of Bayesian hypothesis tests; in that approach, you will run into the same Type I error inflation problems as in the classical frequentist approach.
+
+# Linear models
+
+We consider the case where we have two conditions (e.g., subject and object relatives), and a repeated measures design. The dependent measure is reading times in milliseconds.
+
+If you are not familiar with relative clauses, just imagine doing an experiment with two types of sentences, an easy-to-read sentence type and a difficult-to-read sentence type, and measuring reading time difference between the hard and easy conditions.
+
+## Treatment contrast coding
+
+The alphabetically first condition level is coded 0, and the other condition level is coded 1. E.g., if condition labels are objgap and subjgap, then objgap is coded 0 and subjgap 1. You can change this with the command (not run):
+
+```{r eval=FALSE}
+## this code has not been run:
+## code subj as 0 and obj as 1:
+df_gg05_rc$condition<-
+  factor(df_gg05_rc$condition,
+                             levels=c("subjgap","objgap"))
+```
+                      
+In mathematical form, the linear model is:
+
+\begin{equation}
+rt = \beta_0 + \beta_1 condition + \epsilon
+\end{equation}
+
+where 
+
+- $\beta_0$ is the mean for the object relative
+- *condition& has value 0 (object relative) or 1 (subject relative)
+- $\beta_1$ is the amount by which the object relative mean must be changed to obtain the mean for the subject relative.
+
+
+```{r}
+agg_gg05$condition<-factor(agg_gg05$condition)
+contrasts(agg_gg05$condition)
+## this model is wrong for these data:
+m<-lm(RT ~ condition, agg_gg05)
+round(summary(m)$coefficients,2)
+```
+
+The null hypothesis of interest is that the difference in means between the two relative clause types $\beta_1$ is:
+
+$H_0: \beta_1 = 0$
+
+We will make a distinction between the **unknown true mean** $\beta_0, \beta_1$ and the **estimated mean from the data** $\hat\beta_0, \hat\beta_1$. These estimated means are maximum likelihood estimates of the parameters.
+
+- Estimated mean object relative processing time: $\hat\beta_0=471$ ms.
+- Estimated mean subject relative processing time: $\hat\beta_0+\hat\beta_1=471+(-102)=369$.
+
+## Sum contrast coding
+
+Alternatively,  we can code objgap as $+1$ and subjgap as $-1$ (or vice versa). 
+
+Equivalently: objgap as $+1/2$ and subjgap as $-1/2$ (or vice versa). 
+
+With $\pm 1$ coding:
+
+```{r}
+agg_gg05$so<-ifelse(agg_gg05$condition=="objgap",
+                      1,-1)
+
+## this model is wrong:
+m_sum<-lm(RT~so,agg_gg05)
+round(summary(m_sum)$coefficients,2)
+```
+
+
+- Estimated **grand mean** processing time: $\hat \beta_0=420$ ms.
+- Estimated mean object relative processing time: $\hat\beta_0+\hat\beta_1=420+1\times 51=471$.
+-  Estimated mean subject relative processing time: $\hat\beta_0-\hat\beta_1=420+ (-1)\times 51=369$.
+
+
+This kind of parameterization is called **sum-to-zero contrast** or more simply **sum contrast** coding. This is the coding we will use.
+
+The null hypothesis for the slope is
+
+\begin{equation}
+H_0: \mathbf{1\times} \mu_{obj} + (\mathbf{-1\times}) \mu_{subj} = 0   
+\end{equation}
+
+or:
+
+\begin{equation}
+H_0: \mu_{obj} =  \mu_{subj} 
+\end{equation}
+
+
+The sum contrasts are referring to the $\pm 1$ terms in the null hypothesis:
+
+- object relative: +1
+- subject relative: -1
+
+The model is:
+
+Estimated object relative reading times:
+
+\begin{equation}
+rt = 420\mathbf{\times 1} + 51\mathbf{\times 1}
+\end{equation}
+
+Estimated subject relative reading times:
+
+\begin{equation}
+rt = 420\mathbf{\times 1} + 51\mathbf{\times -1} 
+\end{equation}
+
+The $\epsilon$ has been dropped here because the mean of the random variable $\epsilon$ is 0.
+
+## The normality assumption of the residuals in the linear models
+
+The model is:
+
+\begin{equation}
+rt = \beta_0 + \beta_1 + \epsilon \hbox{ where }  \epsilon\sim Normal(0,\sigma)
+\end{equation}
+
+It is an assumption of the linear model that the residuals are (approximately) normally distributed.
+
+This assumption is not crucial if our goal is only to estimate the parameters.
+
+However, this assumption is crucial if we are doing hypothesis testing.
+
+We can check this assumption in R. **This model is wrong for these data**.
+
+```{r}
+m<-lm(RT ~ condition, agg_gg05)
+car::qqPlot(residuals(m))
+```
+
+
+If the residuals were approximately normally distributed, the quantiles of the standard normal and the residuals would align, leading to a diagonal line angled at 45 degrees (not the case here).
+
+A log-transform would improve the situation here:
+
+```{r}
+m<-lm(log(RT) ~ condition, agg_gg05)
+car::qqPlot(residuals(m))
+```
+
+
+
+
+## Linear mixed models
+
+The correct model for the **aggregated** data:
+
+```{r}
+library(lme4)
+m1<-lmer(RT ~ condition + (1|subj), agg_gg05)
+## compare with the paired t-test result above!
+## They are exactly the same.
+summary(m1)$coefficients
+
+OR<-subset(agg_gg05,condition=="objgap")$RT
+SR<-subset(agg_gg05,condition=="subjgap")$RT
+diff<-SR-OR
+## one sample t-test:
+t.test(diff)
+```
+
+**The linear mixed model with varying intercepts (on the aggregated data) is exactly the one-sample (paired) t-test.**
+
+Residuals check:
+
+```{r}
+car::qqPlot(residuals(m1))
+```
+
+The correct way to analyze these data are using linear mixed models on the **unaggregated** data, and carrying out a log transform on the data:
+
+```{r}
+df_gg05_rc$so<-ifelse(df_gg05_rc$condition=="objgap",
+                      1,-1)
+m2<-lmer(log(RT) ~ so + 
+           (1+so|subj) + (1+so| item), 
+         df_gg05_rc)
+summary(m2)$coefficients
+```
+
+The convergence warning is due to data sparsity, leading to an inability to estimate the varying intercepts/slopes correlation for items.
+
+For a full and formal review of linear models (including linear mixed modeling), see:
+
+https://github.com/vasishth/LM
