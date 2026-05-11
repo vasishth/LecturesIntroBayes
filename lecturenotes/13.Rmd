@@ -507,7 +507,7 @@ What this means is that the Bayes factor is the ratio of the posterior to prior 
 
 - Method 2: bayestestr (bridgesampling)--as slow as bayes_factor 
 
-- Method 3: hypothesis (brms, Savage-Dickey ratio)--somewhat faster, but limited to point null hypotheses, plus the null model must be a proper subset of the full model
+- Method 3: hypothesis (brms, Savage-Dickey ratio)--somewhat faster, but limited to point null hypotheses, or when a region of practical equivalence is defined in the null model,^[See: https://michael-franke.github.io/intro-data-analysis/ch-03-05-Bayesian-testing-comparison.html] plus the null model must be a proper subset of the full model
 
 - Method 4: Using the Normal-Normal conjugate case (with Savage-Dickey): very fast approximation. I only use this when I have no choice
 
@@ -534,7 +534,7 @@ df_gg05_rc$so<-ifelse(df_gg05_rc$condition=="objgap",1/2,-1/2)
 
 ```{r echo=TRUE}
 priors <- c(set_prior("normal(6, 0.6)", class = "Intercept"),
-             set_prior("normal(0, 0.2)", class = "b", 
+             set_prior("normal(0, 1)", class = "b", 
                        coef = "so"),
              set_prior("normal(0, 0.2)", class = "sd"),
              set_prior("normal(0, 0.5)", class = "sigma"),
