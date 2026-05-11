@@ -371,6 +371,7 @@ qt(0.975,df=n-1)
 
 Their absolute values are of course identical (the distribution is symmetric when the t-distribution is centered on 0).
 
+
 ## The p-value
 
 This is the probability of observing a t-value at least as extreme as the one you observed, **under the assumption that the null hypothesis is true**.
@@ -490,7 +491,6 @@ polygon(c(x1, rev(x1)),
         c(rep(0, length(x1)), rev(y1)), 
         col = "orange")
 ```
-
 
 ## Computing power
 
@@ -1031,6 +1031,7 @@ df_gg05_rc$so<-ifelse(df_gg05_rc$condition=="objgap",
 m2<-lmer(log(RT) ~ so + 
            (1+so|subj) + (1+so| item), 
          df_gg05_rc)
+
 summary(m2)$coefficients
 ```
 
