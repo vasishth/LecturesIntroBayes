@@ -1,0 +1,1092 @@
+---
+title: "Chapter 4: Bayesian regression models"
+author: "Shravan Vasishth (vasishth.github.io)"
+date: "July 2025"
+output: 
+  html_document:
+    theme: flatly
+fontsize: 12pt
+geometry: "a4paper,right=8.5cm,left=1cm,bottom=2cm,top=2cm"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggplot2)
+library(bcogsci)
+library(brms)
+```
+
+```{r, echo=FALSE, results='asis'}
+cat('
+<style>
+body {
+  margin-right: 120px;
+}
+</style>
+')
+```
+
+\Large
+
+# Textbook
+
+Introduction to Bayesian Data Analysis for Cognitive Science
+
+Nicenboim, Schad, Vasishth
+
+- Online version: https://bruno.nicenboim.me/bayescogsci/
+- Source code: https://github.com/bnicenboim/bayescogsci
+- Physical book: [here](https://www.routledge.com/Introduction-to-Bayesian-Data-Analysis-for-Cognitive-Science/Nicenboim-Schad-Vasishth/p/book/9780367359331)
+
+```{r include=FALSE}
+short_summary <- function (x, digits = 2, ...) 
+{
+  x<- summary(x)
+  cat("...\n")
+    # cat(" Family: ")
+    # cat(summarise_families(x$formula), "\n")
+    # cat("  Links: ")
+    # cat(summarise_links(x$formula, wsp = 9), "\n")
+    # cat("Formula: ")
+    # print(x$formula, wsp = 9)
+    # cat(paste0("   Data: ", x$data_name, " (Number of observations: ", 
+        # x$nobs, ") \n"))
+    if (!isTRUE(nzchar(x$sampler))) {
+        cat("\nThe model does not contain posterior samples.\n")
+    }
+    else {
+        final_samples <- ceiling((x$iter - x$warmup)/x$thin * 
+            x$chains)
+        # cat(paste0("Samples: ", x$chains, " chains, each with iter = ", 
+        #     x$iter, "; warmup = ", x$warmup, "; thin = ", x$thin, 
+        #     ";\n", "         total post-warmup samples = ", final_samples, 
+        #     "\n\n"))
+        if (nrow(x$prior)) {
+            cat("Priors: \n")
+            print(x$prior, show_df = FALSE)
+            cat("\n")
+        }
+        if (length(x$splines)) {
+            cat("Smooth Terms: \n")
+            brms:::print_format(x$splines, digits)
+            cat("\n")
+        }
+        if (length(x$gp)) {
+            cat("Gaussian Process Terms: \n")
+            brms:::print_format(x$gp, digits)
+            cat("\n")
+        }
+        if (nrow(x$cor_pars)) {
+            cat("Correlation Structures:\n")
+            brms:::print_format(x$cor_pars, digits)
+            cat("\n")
+        }
+        if (length(x$random)) {
+            cat("Group-Level Effects: \n")
+            for (i in seq_along(x$random)) {
+                g <- names(x$random)[i]
+                cat(paste0("~", g, " (Number of levels: ", x$ngrps[[g]], 
+                  ") \n"))
+                brms:::print_format(x$random[[g]], digits)
+                cat("\n")
+            }
+        }
+        if (nrow(x$fixed)) {
+            cat("Population-Level Effects: \n")
+            brms:::print_format(x$fixed, digits)
+            cat("\n")
+        }
+        if (length(x$mo)) {
+            cat("Simplex Parameters: \n")
+            brms:::print_format(x$mo, digits)
+            cat("\n")
+        }
+        if (nrow(x$spec_pars)) {
+            cat("Family Specific Parameters: \n")
+            brms:::print_format(x$spec_pars, digits)
+            cat("\n")
+        }
+        if (length(x$rescor_pars)) {
+            cat("Residual Correlations: \n")
+            brms:::print_format(x$rescor, digits)
+            cat("\n")
+        }
+        # cat(paste0("Samples were drawn using ", x$sampler, ". "))
+        if (x$algorithm == "sampling") {
+            #cat(paste0("For each parameter, Bulk_ESS\n", "and Tail_ESS are effective sample size measures, ", 
+             #   "and Rhat is the potential\n", "scale reduction factor on split chains ", 
+              #  "(at convergence, Rhat = 1)."))
+        }
+        cat("...\n")
+    }
+    invisible(x)
+}
+```
+
+# Example: Multiple object tracking
+
+\begin{itemize}
+\item 
+The subject covertly tracks between zero and five objects among several randomly moving objects on a computer screen.
+\item
+First, several objects appear on the screen, and a subset of them are indicated as "targets" at the beginning. 
+\item
+Then, the objects start moving randomly across the screen and become indistinguishable. 
+\item
+After several seconds, the objects stop moving and the subject need to indicate which objects were the targets.
+\end{itemize}
+
+Our research goal is to examine **how the attentional load affects pupil size**.
+
+\begin{center}
+\includegraphics[height=10cm]{figures/MOT.png}
+\end{center}
+
+```{r, echo=FALSE, results='asis'}
+cat('
+<img src="figures/MOT.png" alt="BDA cover" style="height:600px;">
+')
+```
+
+## A model for this design
+
+A model for this experiment design:
+
+\begin{equation}
+p\_size_n \sim \mathit{Normal}(\alpha + c\_load_n \cdot \beta,\sigma)
+\end{equation}
+
+\begin{itemize}
+\item
+$n$ indicates the observation number with $n = 1, \ldots, N$
+\item
+$c\_load$ refers to centered load. 
+\item 
+Every data point is assumed to be independent (in frequentist terms: iid).
+\end{itemize}
+
+## Pilot data for working out priors
+
+Some pilot data helps us work out priors:
+
+```{r}
+data("df_pupil_pilot")
+df_pupil_pilot$p_size %>% summary()
+```
+
+This suggests we can use the following regularizing prior for $\alpha$:
+
+\begin{equation}
+\alpha \sim \mathit{Normal}(1000, 500) 
+\end{equation}
+
+What we are expressing with this prior:
+
+```{r}
+qnorm(c(0.025, 0.975), mean = 1000, sd = 500)
+```
+
+
+
+
+For $\sigma$, we use an uninformative prior:
+
+\begin{equation}
+\sigma \sim \mathit{Normal}_+(0, 1000)
+\end{equation}
+
+```{r}
+extraDistr::qtnorm(c(.025,0.975), 
+mean = 0, sd = 1000, a = 0)
+```
+
+
+
+
+
+\begin{equation}
+\beta \sim \mathit{Normal}(0, 100)
+\end{equation}
+
+```{r}
+qnorm(c(0.025, 0.975), mean = 0, sd = 100)
+```
+
+
+
+## Fit the model
+
+First, center the predictor:
+
+```{r}
+data("df_pupil")
+(df_pupil <- df_pupil %>%
+  mutate(c_load = load - mean(load)))
+```
+
+
+
+
+
+
+```{r cache=TRUE,warning=FALSE,message=FALSE,results="hide"}
+fit_pupil <- brm(p_size ~ 1 + c_load,
+  data = df_pupil,
+  family = gaussian(),
+  prior = c(
+    prior(normal(1000, 500), class = Intercept),
+    prior(normal(0, 1000), class = sigma),
+    prior(normal(0, 100), class = b, coef = c_load)
+  )
+)
+```
+
+
+## Posterior distributions of the parameters
+
+Next, we will plot the posterior distributions of the parameters, and the posterior predictive distributions for the different load levels.
+
+
+
+
+```{r cache=TRUE,warning=FALSE,message=FALSE,results="hide"}
+data("df_pupil")
+(df_pupil <- df_pupil %>%
+  mutate(c_load = load - mean(load)))
+
+fit_pupil <- brm(p_size ~ 1 + c_load,
+  data = df_pupil,
+  family = gaussian(),
+  prior = c(
+    prior(normal(1000, 500), class = Intercept),
+    prior(normal(0, 1000), class = sigma),
+    prior(normal(0, 100), class = b, coef = c_load)
+  )
+)
+```
+
+```{r}
+plot(fit_pupil)
+```
+
+
+
+
+\small
+```{r}
+## Note: short_summary is
+## a function we wrote
+short_summary(fit_pupil)
+```
+\Large
+
+
+
+```{r message=FALSE}
+l<-0
+  df_sub_pupil <- filter(df_pupil, load == l)
+  p <- pp_check(fit_pupil,
+    type = "dens_overlay",
+    ndraws = 100,
+    newdata = df_sub_pupil
+  ) +
+    geom_point(data = df_sub_pupil, 
+    aes(x = p_size, y = 0.0001)) +
+    ggtitle(paste("load: ", l)) +
+    coord_cartesian(xlim = c(400, 1000)) + 
+    theme_bw()
+  print(p)
+```
+
+
+
+
+```{r message = FALSE}
+l<-1
+  df_sub_pupil <- filter(df_pupil, load == l)
+  p <- pp_check(fit_pupil,
+    type = "dens_overlay",
+    ndraws = 100,
+    newdata = df_sub_pupil
+  ) +
+    geom_point(data = df_sub_pupil, 
+    aes(x = p_size, y = 0.0001)) +
+    ggtitle(paste("load: ", l)) +
+    coord_cartesian(xlim = c(400, 1000)) + 
+    theme_bw()
+  print(p)
+```
+
+
+
+
+```{r message=FALSE}
+l<-2
+  df_sub_pupil <- filter(df_pupil, load == l)
+  p <- pp_check(fit_pupil,
+    type = "dens_overlay",
+    ndraws = 100,
+    newdata = df_sub_pupil
+  ) +
+    geom_point(data = df_sub_pupil, 
+    aes(x = p_size, y = 0.0001)) +
+    ggtitle(paste("load: ", l)) +
+    coord_cartesian(xlim = c(400, 1000)) + theme_bw()
+  print(p)
+```
+
+
+
+
+```{r message=FALSE}
+l<-3
+  df_sub_pupil <- filter(df_pupil, load == l)
+  p <- pp_check(fit_pupil,
+    type = "dens_overlay",
+    ndraws = 100,
+    newdata = df_sub_pupil
+  ) +
+    geom_point(data = df_sub_pupil, 
+    aes(x = p_size, y = 0.0001)) +
+    ggtitle(paste("load: ", l)) +
+    coord_cartesian(xlim = c(400, 1000)) + 
+    theme_bw()
+  print(p)
+```
+
+
+
+
+```{r message=FALSE}
+l<-4
+  df_sub_pupil <- filter(df_pupil, 
+  load == l)
+  p <- pp_check(fit_pupil,
+    type = "dens_overlay",
+    ndraws = 100,
+    newdata = df_sub_pupil
+  ) +
+    geom_point(data = df_sub_pupil, 
+    aes(x = p_size, y = 0.0001)) +
+    ggtitle(paste("load: ", l)) +
+    coord_cartesian(xlim = c(400, 1000)) + 
+    theme_bw()
+  print(p)
+```
+
+
+## Using the log-normal likelihood
+
+
+
+Next, we will look at another example: the effect of trial id on button-pressing times.
+This time, we will use the log-normal likelihood.
+
+
+
+
+```{r}
+df_spacebar <- df_spacebar %>%
+  mutate(c_trial = trial - mean(trial))
+```
+
+
+
+
+If we assume that button-pressing times are log-normally distributed, we could proceed as follows:
+
+\begin{equation}
+t_n \sim \mathit{LogNormal}(\alpha + c\_trial_n \cdot \beta,\sigma)
+\end{equation}
+
+where
+
+\begin{itemize}
+\item $N$ is the total number of (independent!) data points
+\item
+$n =1, \ldots, N$, and
+\item
+$rt$ is the dependent variable (response times in milliseconds).
+\end{itemize}
+
+
+
+
+The priors have to be defined on the log scale:
+
+\begin{equation}
+\begin{aligned}
+\alpha &\sim \mathit{Normal}(6, 1.5) \\
+\sigma &\sim \mathit{Normal}_+(0, 1)\\
+\end{aligned}
+\end{equation}
+
+A new parameter, $\beta$, needs a prior specification:
+
+\begin{equation}
+\beta \sim \mathit{Normal}(0, 1)
+\end{equation}
+
+This prior on $\beta$ is very uninformative.
+
+## Prior predictive distributions
+
+```{r cache=TRUE,warning=FALSE,message=FALSE,results="hide"}
+df_spacebar_ref <- df_spacebar %>%
+  mutate(rt = rep(1, n()))
+fit_prior_press_trial <- brm(t ~ 1 + c_trial,
+  data = df_spacebar_ref,
+  family = lognormal(),
+  prior = c(
+    prior(normal(6, 1.5), class = Intercept),
+    prior(normal(0, 1), class = sigma),
+    prior(normal(0, 1), class = b, 
+    coef = c_trial)
+  ),
+  sample_prior = "only",
+  control = list(adapt_delta = 0.9)
+)
+```
+
+
+
+```{r eval=FALSE,include=FALSE}
+median_diff <- function(x) {
+  median(x - lag(x), na.rm = TRUE)
+}
+pp_check(fit_prior_press_trial,
+         type = "stat",
+         stat = "median_diff",
+  # show only prior predictive 
+  # distributions
+         prefix = "ppd",
+  # each bin has a width of 500ms
+         binwidth = 500) +
+  # cut the top of the plot to improve its scale
+  coord_cartesian(ylim = c(0, 50))+theme_bw()
+```
+
+
+
+
+```{r}
+median_diff <- function(x) {
+  median(x - lag(x), na.rm = TRUE)
+}
+pp_check(fit_prior_press_trial,
+         type = "stat",
+         stat = "median_diff",
+  # show only prior predictive 
+  # distributions
+         prefix = "ppd",
+  # each bin has a width of 500ms
+         binwidth = 500) +
+  # cut the top of the plot to improve its scale
+  coord_cartesian(ylim = c(0, 50))+theme_bw()
+```
+
+
+
+
+
+What would the prior predictive distribution look like if we set the following more informative prior on $\beta$?
+
+\begin{equation}
+\beta \sim \mathit{Normal}(0, 0.01)
+\end{equation}
+
+
+
+
+
+```{r cache=TRUE,warning=FALSE,message=FALSE,results="hide"}
+fit_prior_press_trial <- brm(t ~ 1 + c_trial,
+  data = df_spacebar_ref,
+  family = lognormal(),
+  prior = c(
+    prior(normal(6, 1.5), class = Intercept),
+    prior(normal(0, 1), class = sigma),
+    prior(normal(0, .01), class = b, coef = c_trial)
+  ),
+  sample_prior = "only",
+  control = list(adapt_delta = .9)
+)
+```
+
+```{r}
+pp_check(fit_prior_press_trial,
+         type = "stat",
+         prefix = "ppd",
+         binwidth = 50,
+         stat = "median_diff") +
+  coord_cartesian(ylim = c(0, 50))
+```
+
+
+
+
+Now that we have decided on our priors, we fit the model.
+
+
+
+
+```{r}
+data("df_spacebar")
+df_spacebar <- df_spacebar %>%
+  mutate(c_trial = trial - mean(trial))
+```
+
+Fit the model:
+
+```{r cache=TRUE,warning=FALSE,message=FALSE,results="hide"}
+fit_press_trial <- brm(t ~ 1 + c_trial,
+  data = df_spacebar,
+  family = lognormal(),
+  prior = c(
+    prior(normal(6, 1.5), class = Intercept),
+    prior(normal(0, 1), class = sigma),
+    prior(normal(0, .01), class = b, coef = c_trial)
+  )
+)
+```
+
+
+
+
+Summarize posteriors (graphically or in a table, or both):
+
+```{r}
+plot(fit_press_trial)
+```
+
+
+
+
+
+Summarize results on the ms scale (the effect estimate from the middle of the expt to the preceding trial):
+
+```{r}
+alpha_samples <- as_draws_df(fit_press_trial)$b_Intercept
+beta_samples <- as_draws_df(fit_press_trial)$b_c_trial
+
+beta_ms <- exp(alpha_samples) - 
+           exp(alpha_samples - beta_samples)
+
+beta_msmean <- round(mean(beta_ms), 5)
+beta_mslow <- round(quantile(beta_ms, prob = 0.025), 5)
+beta_mshigh <- round(quantile(beta_ms, prob = 0.975), 5)
+c(beta_msmean , beta_mslow, beta_mshigh)
+```
+
+
+
+
+
+
+The effect estimate at the first vs second trial:
+
+```{r}
+first_trial <- min(df_spacebar$c_trial)
+second_trial <- min(df_spacebar$c_trial) + 1
+effect_beginning_ms <-
+  exp(alpha_samples + second_trial * beta_samples) -
+  exp(alpha_samples + first_trial * beta_samples)
+## ms effect from first to second trial:
+c(mean = mean(effect_beginning_ms),
+  quantile(effect_beginning_ms, c(0.025, 0.975)))
+```
+
+
+
+
+
+Slowdown after 100 trials from the middle of the expt:
+```{r}
+effect_100 <-
+  exp(alpha_samples + 100 * beta_samples) -
+  exp(alpha_samples)
+c(mean = mean(effect_100),
+  quantile(effect_100, c(0.025, 0.975)))
+```
+
+
+
+
+The posterior predictive distribution (distribution of predicted median differences  between the n and n-100th trial):
+
+```{r message=FALSE}
+median_diff100 <- function(x) median(x - 
+                   lag(x, 100), na.rm = TRUE)
+pp_check(fit_press_trial,
+         type = "stat",
+         stat = "median_diff100")
+```
+
+
+
+
+# Logistic regression
+
+
+
+
+
+\begin{center}
+\includegraphics[height=10cm]{figures/fig1oberauer2019modified.png}
+\end{center}
+
+
+
+```{r}
+data("df_recall")
+head(df_recall)
+df_recall <- df_recall %>%
+  mutate(c_set_size = set_size - mean(set_size))
+```
+
+
+
+
+
+```{r}
+# Set sizes in the data set:
+df_recall$set_size %>%
+  unique() %>% sort()
+```
+
+
+
+
+```{r}
+# Trials by set size
+df_recall %>%
+  group_by(set_size) %>%
+  count()
+```
+
+
+
+
+
+\begin{equation}
+correct_n \sim \mathit{Bernoulli}(\theta_n)
+\end{equation}
+
+\begin{equation}
+\eta_n = g(\theta_n) = \log\left(\frac{\theta_n}{1-\theta_n}\right)
+\end{equation}
+
+
+
+
+```{r warning=FALSE}
+x <- seq(0.001, 0.999, by = 0.001)
+y <- log(x / (1 - x))
+logistic_dat <- data.frame(theta = x, eta = y)
+
+p1 <- qplot(logistic_dat$theta, 
+    logistic_dat$eta, geom = "line") +
+  xlab(expression(theta)) +
+  ylab(expression(eta)) +
+  ggtitle("The logit link") +
+  annotate("text",
+    x = 0.3, y = 4,
+    label = expression(paste(eta, "=",
+                             g(theta))), 
+                             parse = TRUE,
+    size = 8
+  ) + theme_bw()
+```
+
+
+
+
+
+```{r warning=FALSE}
+p2 <- qplot(logistic_dat$eta, logistic_dat$theta, 
+            geom = "line") + xlab(expression(eta)) + 
+  ylab(expression(theta)) + 
+  ggtitle("The inverse logit link (logistic)") + 
+  annotate("text",
+  x = -3.5, y = 0.80,
+  label = expression(paste(theta, "=", g^-1, 
+                           (eta))), 
+                           parse = TRUE, size = 8
+) + theme_bw()
+
+gridExtra::grid.arrange(p1, p2, ncol = 2)
+```
+
+
+
+
+```{r}
+x <- seq(0.001, 0.999, by = 0.001)
+y <- log(x / (1 - x))
+logistic_dat <- data.frame(theta = x, eta = y)
+
+p1 <- qplot(logistic_dat$theta, 
+      logistic_dat$eta, geom = "line") + 
+      xlab(expression(theta)) + 
+      ylab(expression(eta)) + 
+      ggtitle("The logit link") +
+      annotate("text",
+      x = 0.3, y = 4,
+      label = expression(paste(eta, "=", 
+      g(theta))), parse = TRUE, size = 8
+  ) + 
+  theme_bw()
+
+
+p2 <- qplot(logistic_dat$eta, 
+      logistic_dat$theta, geom = "line") + 
+      xlab(expression(eta)) + 
+      ylab(expression(theta)) + 
+      ggtitle("The inverse logit link (logistic)") + 
+      annotate("text",
+  x = -3.5, y = 0.80,
+  label = expression(paste(theta, "=", g^-1, (eta))), 
+  parse = TRUE, size = 8
+) + theme_bw()
+
+gridExtra::grid.arrange(p1, p2, ncol = 2)
+```
+
+
+## Deciding on priors
+
+```{r}
+data("df_recall")
+head(df_recall)
+
+df_recall <- df_recall %>%
+  mutate(c_set_size = set_size - mean(set_size))
+```
+
+
+
+
+
+The linear model is now fit not to the 0,1 responses as the dependent variable, but to $\eta_n$, i.e., log-odds, as the dependent variable:
+
+\begin{equation}
+\eta_n = \log\left(\frac{\theta_n}{1-\theta_n}\right) = \alpha + \beta \cdot c\_set\_size_n
+\end{equation}
+
+
+
+
+\begin{itemize}
+\item
+Unlike the linear models, the model is defined so that there is no residual error term ($\varepsilon$) in this model. 
+\item
+Once $\eta_n$ is estimated, one can  solve the above equation for $\theta_n$ (in other words, we compute the inverse of the logit function and obtain the estimates on the probability scale). 
+\end{itemize}
+
+This gives the above-mentioned logistic regression function:
+
+\begin{equation}
+\theta_n = g^{-1}(\eta_n) =  \frac{\exp(\eta_n)}{1+\exp(\eta_n)} = \frac{1}{1+exp(-\eta_n)}
+\end{equation}
+
+
+
+
+In summary, the generalized linear model with the logit link fits the following Bernoulli likelihood:
+
+\begin{equation}
+correct_n \sim \mathit{Bernoulli}(\theta_n)
+\end{equation}
+
+\begin{itemize}
+\item
+The model is fit on the log-odds scale, $\eta_n = \alpha + c\_set\_size_n \cdot \beta$.
+\item
+Once $\eta_n$ has been estimated, the inverse logit or the logistic function is used to compute the probability estimates
+$\theta_n =  \frac{\exp(\eta_n)}{1+\exp(\eta_n)}$.
+\end{itemize}
+
+
+
+
+
+There are two functions in R that implement the logit and inverse logit functions: 
+\begin{itemize}
+\item
+\texttt{qlogis(p)} for the logit function and 
+\item
+\texttt{plogis(x)} for the inverse logit or logistic function.
+\end{itemize}
+
+\begin{equation}
+\alpha \sim \mathit{Normal}(0, 4)
+\end{equation}
+
+Let's plot this prior in log-odds and in probability scale by drawing random samples.
+
+
+
+
+Prior for $\alpha \sim \mathit{Normal}(0, 4)$ in log-odds and in probability space.
+
+```{r}
+samples_logodds <- tibble(alpha = rnorm(100000, 
+                   0, 4))
+samples_prob <- tibble(p = plogis(rnorm(100000, 
+                  0, 4)))
+pa<-ggplot(samples_logodds, aes(alpha)) +
+  geom_density()+theme_bw()
+pb<-ggplot(samples_prob, aes(p)) +
+  geom_density()+theme_bw()
+gridExtra::grid.arrange(pa, pb, ncol = 2)
+```
+
+
+
+
+
+\begin{equation}
+\alpha \sim \mathit{Normal}(0, 1.5)
+\end{equation}
+
+
+
+
+Prior for $\alpha \sim \mathit{Normal}(0, 1.5)$ in log-odds and in probability space.
+
+```{r}
+samples_logodds <- tibble(alpha = rnorm(100000, 
+                   0, 1.5))
+samples_prob <- tibble(p = plogis(rnorm(100000, 
+                  0, 1.5)))
+paa<-ggplot(samples_logodds, aes(alpha)) +
+  geom_density()+theme_bw()
+pbb<-ggplot(samples_prob, aes(p)) +
+  geom_density()+theme_bw()
+gridExtra::grid.arrange(paa, pbb, ncol = 2)
+```
+
+
+
+
+We can examine the consequences of each of the following prior specifications:
+
+\begin{enumerate}
+\item $\beta \sim \mathit{Normal}(0, 1)$
+\item $\beta \sim \mathit{Normal}(0, 0.5)$
+\item $\beta \sim \mathit{Normal}(0, 0.1)$
+\item $\beta \sim \mathit{Normal}(0, 0.01)$
+\item $\beta \sim \mathit{Normal}(0, 0.001)$
+\end{enumerate}
+
+
+```{r}
+logistic_model_pred <- function(alpha_samples,
+                       beta_samples,
+                       set_size,N_obs) {
+  map2_dfr(alpha_samples, beta_samples,
+    function(alpha, beta) {
+      tibble(
+        set_size = set_size,
+        # center size:
+        c_set_size = set_size - mean(set_size),
+        # change the likelihood:
+        theta = plogis(alpha + c_set_size * beta),
+        correct_pred = extraDistr::rbern(n = N_obs, 
+        prob = theta)
+      )
+    },
+    .id = "iter"
+  ) %>%
+    # .id is always a string and has to 
+    # be converted to a number
+    mutate(iter = as.numeric(iter))
+}
+```
+
+
+```{r}
+N_obs <- 800
+set_size <- rep(c(2, 4, 6, 8), 200)
+```
+
+
+```{r}
+alpha_samples <- rnorm(1000, 0, 1.5)
+sds_beta <- c(1, 0.5, 0.1, 0.01, 0.001)
+prior_pred <- map_dfr(sds_beta, function(sd) {
+  beta_samples <- rnorm(1000, 0, sd)
+  logistic_model_pred(
+    alpha_samples = alpha_samples,
+    beta_samples = beta_samples,
+    set_size = set_size,
+    N_obs = N_obs
+  ) %>%
+    mutate(prior_beta_sd = sd)
+})
+```
+
+```{r}
+mean_accuracy <-
+  prior_pred %>%
+  group_by(prior_beta_sd, iter, set_size) %>%
+  summarize(accuracy = mean(correct_pred)) %>%
+  mutate(prior = paste0("Normal(0, ", 
+  prior_beta_sd, ")"))
+```
+
+
+
+```{r}
+mean_accuracy %>%
+  ggplot(aes(accuracy)) +
+  geom_histogram() +
+  facet_grid(set_size ~ prior) +
+  scale_x_continuous(breaks = c(0, 0.5, 1))+
+  theme_bw()
+```
+
+
+
+
+
+It's usually more useful to look at the predicted differences in accuracy between set sizes.
+
+```{r}
+diff_accuracy <- mean_accuracy %>%
+  arrange(set_size) %>%
+  group_by(iter, prior_beta_sd) %>%
+  mutate(diff_accuracy = accuracy - lag(accuracy)) %>%
+  mutate(diffsize = paste(set_size, "-", 
+  lag(set_size))) %>%
+  filter(set_size > 2)
+```
+
+```{r message=FALSE}
+diff_accuracy %>%
+  ggplot(aes(diff_accuracy)) +
+  geom_histogram() +
+  facet_grid(diffsize ~ prior) +
+  scale_x_continuous(breaks = c(-0.5, 0, 0.5)) +
+  theme_bw()
+```
+
+
+These priors seem reasonable:
+
+\begin{equation}
+\begin{aligned}
+\alpha &\sim \mathit{Normal}(0, 1.5) \\
+\beta &\sim \mathit{Normal}(0, 0.1)
+\end{aligned}
+\end{equation}
+
+
+## Fit the model
+
+Next: fit the model and examine the posterior distributions of the parameters.
+
+
+
+
+\small
+```{r}
+data("df_recall")
+head(df_recall)
+df_recall <- df_recall %>%
+  mutate(c_set_size = set_size - mean(set_size))
+```
+
+
+\Large
+
+```{r cache=TRUE,warning=FALSE,message=FALSE,results="hide"}
+fit_recall <- brm(correct ~ 1 + c_set_size,
+  data = df_recall,
+  family = bernoulli(link = logit),
+  prior = c(
+    prior(normal(0, 1.5), class = Intercept),
+    prior(normal(0, .1), class = b, 
+    coef = c_set_size)
+  )
+)
+```
+
+\small
+```{r}
+posterior_summary(fit_recall,
+                  variable = c("b_Intercept", 
+                  "b_c_set_size"))
+```
+\Large
+
+
+
+```{r}
+plot(fit_recall)
+```
+
+
+
+
+```{r}
+alpha_samples <- as_draws_df(fit_recall)$b_Intercept
+beta_samples <- as_draws_df(fit_recall)$b_c_set_size
+beta_mean <- round(mean(beta_samples), 5)
+beta_low <- round(quantile(beta_samples, 
+            prob = 0.025), 5)
+beta_high <- round(quantile(beta_samples, 
+            prob = 0.975), 5)
+
+alpha_samples <- as_draws_df(fit_recall)$b_Intercept
+av_accuracy <- plogis(alpha_samples)
+c(mean = mean(av_accuracy), quantile(av_accuracy, 
+                            c(0.025, 0.975)))
+```
+
+
+## Does set size affect free recall?
+
+
+Find out the decrease in accuracy in proportions or probability scale:
+
+```{r}
+beta_samples <- as_draws_df(fit_recall)$b_c_set_size
+effect_middle <- plogis(alpha_samples) -
+  plogis(alpha_samples - beta_samples)
+c(mean = mean(effect_middle),
+  quantile(effect_middle, c(0.025, 0.975)))
+```
+
+
+
+
+```{r}
+four <- 4 - mean(df_recall$set_size)
+two <- 2 - mean(df_recall$set_size)
+effect_4m2 <-
+  plogis(alpha_samples + four * beta_samples) -
+  plogis(alpha_samples + two * beta_samples)
+c(mean = mean(effect_4m2),
+  quantile(effect_4m2, c(0.025, 0.975)))
+```
+
+## Conclusion (careful about the wording!)
+
+The posterior distributions of the parameters (transformed to probability scale) are consistent with the claim that increasing set size reduces accuracy.
+
+**Notice that I did not write any of the following sentences**: 
+
+- "There is a significant effect of set size on accuracy". This sentence is basically nonsensical since we didn't do a frequentist significance test.
+- "We found that set size reduces accuracy": That is a discovery claim. 
+Such a claim of the existence of an effect requires us to quantify the evidence for 
+a model assuming that set size affects accuracy, relative to a baseline model.
+Later, we will use Bayes factors (or, even later, k-fold cross validation). 
+
+The wording I used simply states that the observed **pattern** is consistent with set size reducing accuracy. 
+I am careful not to make a discovery claim. 
+In particular, I am not claiming that I found a general truth about 
+the nature of things.
+
+
