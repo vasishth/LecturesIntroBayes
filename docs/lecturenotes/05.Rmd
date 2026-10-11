@@ -1,0 +1,1033 @@
+---
+title: "Chapter 5: Hierarchical models"
+author: "Shravan Vasishth (vasishth.github.io)"
+date: "July 2025"
+output: 
+  html_document:
+    theme: flatly
+fontsize: 12pt
+geometry: "a4paper,right=8.5cm,left=1cm,bottom=2cm,top=2cm"
+header-includes: |
+  \usepackage{tikz}
+  \usepackage{enumerate}
+  \usepackage[shortlabels]{enumitem}
+  \usepackage{amsmath}
+  \usepackage{comment}
+  \setcounter{secnumdepth}{4}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.width=5, fig.height=3)
+library(ggplot2)
+theme_set(theme_bw())
+library(reshape2)
+library(dplyr)
+library(stats)
+library(brms)
+library(invgamma)
+library(TruncatedNormal)
+library(truncnorm)
+library(bayesplot)
+library(purrr)
+```
+
+```{r, echo=FALSE, results='asis'}
+cat('
+<style>
+body {
+  margin-right: 120px;
+}
+</style>
+')
+```
+
+\Large
+
+# Textbook
+
+Introduction to Bayesian Data Analysis for Cognitive Science
+
+Nicenboim, Schad, Vasishth
+
+- Online version: https://bruno.nicenboim.me/bayescogsci/
+- Source code: https://github.com/bnicenboim/bayescogsci
+- Physical book: [here](https://www.routledge.com/Introduction-to-Bayesian-Data-Analysis-for-Cognitive-Science/Nicenboim-Schad-Vasishth/p/book/9780367359331)
+
+```{r include=FALSE}
+short_summary <- function (x, digits = 2, ...) 
+{
+  x<- summary(x)
+  cat("...\n")
+    # cat(" Family: ")
+    # cat(summarise_families(x$formula), "\n")
+    # cat("  Links: ")
+    # cat(summarise_links(x$formula, wsp = 9), "\n")
+    # cat("Formula: ")
+    # print(x$formula, wsp = 9)
+    # cat(paste0("   Data: ", x$data_name, " (Number of observations: ", 
+        # x$nobs, ") \n"))
+    if (!isTRUE(nzchar(x$sampler))) {
+        cat("\nThe model does not contain posterior samples.\n")
+    }
+    else {
+        final_samples <- ceiling((x$iter - x$warmup)/x$thin * 
+            x$chains)
+        # cat(paste0("Samples: ", x$chains, " chains, each with iter = ", 
+        #     x$iter, "; warmup = ", x$warmup, "; thin = ", x$thin, 
+        #     ";\n", "         total post-warmup samples = ", final_samples, 
+        #     "\n\n"))
+        if (nrow(x$prior)) {
+            cat("Priors: \n")
+            print(x$prior, show_df = FALSE)
+            cat("\n")
+        }
+        if (length(x$splines)) {
+            cat("Smooth Terms: \n")
+            brms:::print_format(x$splines, digits)
+            cat("\n")
+        }
+        if (length(x$gp)) {
+            cat("Gaussian Process Terms: \n")
+            brms:::print_format(x$gp, digits)
+            cat("\n")
+        }
+        if (nrow(x$cor_pars)) {
+            cat("Correlation Structures:\n")
+            brms:::print_format(x$cor_pars, digits)
+            cat("\n")
+        }
+        if (length(x$random)) {
+            cat("Group-Level Effects: \n")
+            for (i in seq_along(x$random)) {
+                g <- names(x$random)[i]
+                cat(paste0("~", g, " (Number of levels: ", x$ngrps[[g]], 
+                  ") \n"))
+                brms:::print_format(x$random[[g]], digits)
+                cat("\n")
+            }
+        }
+        if (nrow(x$fixed)) {
+            cat("Population-Level Effects: \n")
+            brms:::print_format(x$fixed, digits)
+            cat("\n")
+        }
+        if (length(x$mo)) {
+            cat("Simplex Parameters: \n")
+            brms:::print_format(x$mo, digits)
+            cat("\n")
+        }
+        if (nrow(x$spec_pars)) {
+            cat("Family Specific Parameters: \n")
+            brms:::print_format(x$spec_pars, digits)
+            cat("\n")
+        }
+        if (length(x$rescor_pars)) {
+            cat("Residual Correlations: \n")
+            brms:::print_format(x$rescor, digits)
+            cat("\n")
+        }
+        # cat(paste0("Samples were drawn using ", x$sampler, ". "))
+        if (x$algorithm == "sampling") {
+            #cat(paste0("For each parameter, Bulk_ESS\n", "and Tail_ESS are effective sample size measures, ", 
+             #   "and Rhat is the potential\n", "scale reduction factor on split chains ", 
+              #  "(at convergence, Rhat = 1)."))
+        }
+        cat("...\n")
+    }
+    invisible(x)
+}
+```
+
+
+
+```{r echo=FALSE}
+graph_bopurrrgraph_book <- function(n_grid){
+  p <- ggplot(data.frame(x=1:n_grid,y=1:n_grid),aes(x,y))+
+    geom_blank()+theme_bw()+scale_x_continuous(breaks=1:n_grid)+
+    scale_y_continuous(breaks = 1:n_grid)+
+    theme(axis.text = element_blank())+xlab("")+ylab("")+
+    theme(title = element_text(size=10))
+  return(p)
+}
+```
+
+```{r echo=FALSE}
+library(bcogsci)
+data("df_eeg")
+df_eeg$c_cloze <- df_eeg$cloze - mean(df_eeg$cloze)
+```
+
+\Large
+
+This lecture presupposes that you have read chapter 5 of the textbook.
+
+# A simple linear model (EEG data): "Fixed-effects" model
+
+ \begin{equation}
+   signal_n \sim \mathit{Normal}( \alpha + c\_cloze_n \cdot \beta,\sigma)
+ \end{equation}
+
+ where $n =1, \ldots, N$, and $signal$ is the dependent variable (average signal in the N400 spatiotemporal window in microvolts). The variable $N$ represents the total number of data points.
+
+
+We are going to use the following priors:
+
+ \begin{equation}
+ \begin{aligned}
+ \alpha &\sim \mathit{Normal}(0,10)\\
+ \beta  &\sim \mathit{Normal}(0,10)\\
+ \sigma  &\sim \mathit{Normal}_{+}(0,50)
+ \end{aligned}
+ \end{equation}
+ 
+
+```{r, message = FALSE, results = "hide"}
+df_eeg$c_cloze<-df_eeg$cloze-mean(df_eeg$cloze)
+
+fit_N400_cp <-
+  brm(n400 ~ c_cloze,
+      prior = c(prior(normal(0, 10), class = Intercept),
+                prior(normal(0, 10), class = b, coef = c_cloze),
+                prior(normal(0, 50), class = sigma)),
+      data = df_eeg)
+```
+
+
+Check the summary:
+
+```{r}
+short_summary(fit_N400_cp)
+```
+
+The correlation between the residuals (not terrible):
+
+```{r}
+m<-lm(n400 ~ c_cloze,df_eeg)
+acf(residuals(m))
+```
+
+In repeated measurements data, if you fit a fixed effects model, 
+the residuals can be heavily correlated because one has multiple measurements 
+from each subject and each item.
+
+# No-pooling model (separate linear models for each subject)
+
+ \begin{equation}
+ signal_n \sim \mathit{Normal}( \alpha_{subj[n]} + c\_cloze_n \cdot \beta_{subj[n]},\sigma)
+ \end{equation}
+
+ \begin{equation}
+ \begin{aligned}
+ \alpha_{i} &\sim \mathit{Normal}(0,10)\\
+ \beta_{i}  &\sim \mathit{Normal}(0,10)\\
+ \sigma  &\sim \mathit{Normal}_+(0,50)
+ \end{aligned}
+ \end{equation}
+
+```{r, message = FALSE, results = "hide", cache=TRUE}
+fit_N400_np <- brm(n400 ~ 0 + factor(subj) + c_cloze:factor(subj),
+                   prior = c(prior(normal(0, 10), class = b),
+                             prior(normal(0, 50), class = sigma)),
+                   data = df_eeg)
+```
+
+```{r}
+# parameter name of beta by subject:
+ind_effects_np <- paste0("b_factorsubj",
+                         unique(df_eeg$subj), ":c_cloze")
+beta_across_subj <- as.data.frame(fit_N400_np) %>%
+  #removes the meta data from the object
+  select(all_of(ind_effects_np)) %>%
+  rowMeans()
+
+# Calculate the average of these estimates
+(grand_av_beta <- tibble(mean = mean(beta_across_subj),
+                         lq = quantile(beta_across_subj, c(0.025)),
+                         hq = quantile(beta_across_subj, c(0.975))))
+```
+
+```{r message = FALSE}
+# make a table of beta's by subject
+beta_by_subj <- posterior_summary(fit_N400_np,
+                                  variable = ind_effects_np) %>%
+  as.data.frame() %>%
+  mutate(subject = 1:n()) %>%
+  ## reorder plot by magnitude of mean:
+  arrange(Estimate) %>%
+  mutate(subject = factor(subject, levels = subject))
+```
+
+```{r nopooling,fig.height=9.5, message=FALSE, fig.cap="No pooling model."}
+ggplot(beta_by_subj,
+       aes(x = Estimate, xmin = Q2.5, xmax = Q97.5, y = subject)) +
+  geom_point() +
+  geom_errorbarh() +
+  geom_vline(xintercept = grand_av_beta$mean) +
+  geom_vline(xintercept = grand_av_beta$lq, linetype = "dashed") +
+  geom_vline(xintercept = grand_av_beta$hq, linetype = "dashed") +
+  xlab("By-subject effect of cloze probability in microvolts")
+```
+
+# Varying intercepts and varying slopes model (without correlation)
+
+ \begin{equation}
+  signal_n \sim \mathit{Normal}(\alpha + u_{subj[n],1} + c\_cloze_n \cdot (\beta+ u_{subj[n],2}),\sigma)
+ \end{equation}
+
+\begin{equation}
+ \begin{aligned}
+ \alpha &\sim \mathit{Normal}(0,10)\\
+ \beta  &\sim \mathit{Normal}(0,10)\\
+ u_1 &\sim \mathit{Normal}(0,\tau_{u_1})\\
+ u_2 &\sim \mathit{Normal}(0,\tau_{u_2})\\
+ \tau_{u_1} &\sim \mathit{Normal}_+(0,20) \\
+ \tau_{u_2} &\sim \mathit{Normal}_+(0,20) \\
+ \sigma  &\sim \mathit{Normal}_+(0,50)
+ \end{aligned}
+ \end{equation}
+
+```{r, message = FALSE, results = "hide",cache=TRUE}
+prior_v <-
+  c(prior(normal(0, 10), class = Intercept),
+    prior(normal(0, 10), class = b, coef = c_cloze),
+    prior(normal(0, 50), class = sigma),
+    prior(normal(0, 20), class = sd, coef = Intercept, group = subj),
+    prior(normal(0, 20), class = sd, coef = c_cloze, group = subj))
+fit_N400_v <- brm(n400 ~ c_cloze + (c_cloze || subj),
+                  prior = prior_v,
+                  data = df_eeg)
+```
+
+
+When we print a  `brms` fit, we first  see  the summaries of the posteriors of the standard deviation of the by-group intercept and slopes,  $\tau_{u_1}$ and $\tau_{u_2}$ as `sd(Intercept)` and `sd(c_cloze)`, and then, as with previous models, the population-level effects, $\alpha$ and $\beta$ as `Intercept` and `c_cloze`, and the scale of the likelihood, $\sigma$, as `sigma`. The full summary can be printed out by typing:
+
+```{r}
+short_summary(fit_N400_v)
+```
+
+```{r plotfitN400v,fig.cap="The posteriors of the parameters."}
+mcmc_dens(fit_N400_v, pars = variables(fit_N400_v)[1:5])
+```
+
+```{r partialpooling, fig.cap = "Partial pooling.", fig.height=9.5,message=FALSE,warning=FALSE}
+# make a table of u_2s
+ind_effects_v <- paste0("r_subj[", unique(df_eeg$subj),
+                        ",c_cloze]")
+u_2_v <- posterior_summary(fit_N400_v, variable = ind_effects_v) %>%
+  as_tibble() %>%
+  mutate(subj = 1:n()) %>%
+  ## reorder plot by magnitude of mean:
+  arrange(Estimate) %>%
+  mutate(subj = factor(subj, levels = subj))
+# We plot:
+ggplot(u_2_v,
+       aes(x = Estimate, xmin = Q2.5, xmax = Q97.5, y = subj)) +
+  geom_point() +
+  geom_errorbarh() +
+  xlab("By-subject adjustment to the slope in microvolts")
+```
+
+There is an important difference between the no-pooling model and the varying intercepts and slopes model we just fit. The no-pooling model fits each individual subject's intercept and slope independently for each subject. By contrast, the varying intercepts and slopes model takes *all* the subjects' data into account in order to compute the fixed effects $\alpha$ and $\beta$; and the model "shrinks" the by-subject intercept and slope adjustments towards the fixed effects estimates. In Figure 4 below, we can see the \index{Shrinkage} shrinkage of the estimates in the varying intercepts model by comparing them with the estimates of the no pooling model ($M_{np}$).
+
+```{r, fold = TRUE}
+# Extract parameter estimates from the no pooling model:
+par_np <- posterior_summary(fit_N400_np, variable = ind_effects_np) %>%
+  as_tibble() %>%
+  mutate(model = "No pooling",
+         subj = unique(df_eeg$subj))
+# For the hierarchical model, the code is more complicated
+# because we want the effect (beta) + adjustment.
+# Extract the overall group level effect:
+beta <- c(as_draws_df(fit_N400_v)$b_c_cloze)
+# Extract the individual adjustments:
+ind_effects_v <- paste0("r_subj[", unique(df_eeg$subj), ",c_cloze]")
+adjustment <- as_draws_matrix(fit_N400_v, variable = ind_effects_v)
+# Get the by subject effects in a data frame where each adjustment
+# is in each column.
+# Remove all the draws meta data by using as.data.frame
+by_subj_effect <- as.data.frame(beta + adjustment)
+# Summarize them by getting a table with the mean and the
+# quantiles for each column and then binding them.
+par_h <- lapply(by_subj_effect, function(x) {
+  tibble(Estimate = mean(x),
+         Q2.5 = quantile(x, .025),
+         Q97.5 = quantile(x, .975))}) %>%
+  bind_rows() %>%
+  # Add a column to identify that the model,
+  # and one with the subject labels:
+  mutate(model = "Hierarchical",
+         subj = unique(df_eeg$subj))
+# The mean and 95% CI of both models in one data frame:
+by_subj_df <- bind_rows(par_h, par_np) %>%
+  arrange(Estimate) %>%
+  mutate(subj = factor(subj, levels = unique(.data$subj)))
+```
+
+```{r comparison, message=FALSE, fig.height=9.5, fig.cap= "This plot compares the estimates of the effect of cloze probability for each subject between (i) the no pooling and (ii) the varying intercepts and varying slopes, hierarchical, model."}
+b_c_cloze <- posterior_summary(fit_N400_v, variable = "b_c_cloze")
+ggplot(by_subj_df,
+       aes(ymin = Q2.5, ymax = Q97.5, x = subj,
+           y = Estimate, color = model, shape = model)) +
+  geom_errorbar(position = position_dodge(1)) +
+  geom_point(position = position_dodge(1)) +
+  # We'll also add the mean and 95% CrI of the overall difference
+  # to the plot:
+  geom_hline(yintercept = b_c_cloze[, "Estimate"]) +
+  geom_hline(yintercept = b_c_cloze[, "Q2.5"],
+             linetype = "dotted", linewidth = .5) +
+  geom_hline(yintercept = b_c_cloze[, "Q97.5"],
+             linetype = "dotted", linewidth = .5) +
+  xlab("N400 effect of predictability") +
+  coord_flip()
+```
+
+# Varying intercepts and varying slopes (with correlation)
+
+ \begin{equation}
+  signal_n \sim \mathit{Normal}(\alpha + u_{subj[n],1} + c\_cloze_n \cdot  (\beta + u_{subj[n],2}),\sigma)
+  \end{equation}
+
+
+The correlation is indicated in the  priors on the adjustments for intercept $u_{1}$ and slopes $u_{2}$.
+
+* Priors:
+ \begin{equation}
+ \begin{aligned}
+   \alpha & \sim \mathit{Normal}(0,10) \\
+   \beta  & \sim \mathit{Normal}(0,10) \\
+    \sigma  &\sim \mathit{Normal}_+(0,50)\\
+    {\begin{pmatrix}
+    u_{i,1} \\
+    u_{i,2}
+    \end{pmatrix}}
+   &\sim {\mathcal {N}}
+    \left(
+   {\begin{pmatrix}
+    0\\
+    0
+   \end{pmatrix}}
+ ,\boldsymbol{\Sigma_u} \right)
+ \end{aligned}
+ \end{equation}
+
+\begin{equation}
+\boldsymbol{\Sigma_u} =
+{\begin{pmatrix}
+\tau_{u_1}^2 & \rho_u \tau_{u_1} \tau_{u_2} \\
+\rho_u \tau_{u_1} \tau_{u_2} & \tau_{u_2}^2
+\end{pmatrix}}
+\end{equation}
+
+
+```{r lkjviz,echo=FALSE, fig.cap ="Visualization of the LKJ correlation distribution prior with four different values of the eta parameter.", message= FALSE,warning=FALSE,results="asis",fig.height=11,cache=TRUE, fig.width =4, fig.height=3,fig.show='hold', out.width='48%'}
+## https://github.com/rmcelreath/rethinking/blob/1def057174071beb212532d545bc2d8c559760a2/R/distributions.r
+# onion method correlation matrix
+dlkjcorr <- function(x, eta = 1, log = FALSE) {
+  ll <- det(x)^(eta - 1)
+  if (log == FALSE) ll <- exp(ll)
+  return(ll)
+}
+
+# Simplified for a 2 x 2 matrix
+dlkjcorr2 <- function(rho, eta = 1) {
+  map_dbl(rho, ~ matrix(c(1, .x, .x, 1), ncol = 2) %>%
+    dlkjcorr(., eta))
+}
+
+ggplot(tibble(rho = c(-0.99, 0.99)), aes(rho)) +
+  stat_function(fun = dlkjcorr2, geom = "line", args = list(eta = 1)) +
+  ylab("density") +
+  ggtitle("eta = 1")
+
+ggplot(tibble(rho = c(-0.99, 0.99)), aes(rho)) +
+  stat_function(fun = dlkjcorr2, geom = "line", args = list(eta = 2)) +
+  ylab("density") +
+  ggtitle("eta = 2")
+
+ggplot(tibble(rho = c(-0.99, 0.99)), aes(rho)) +
+  stat_function(fun = dlkjcorr2, geom = "line", args = list(eta = 4)) +
+  ylab("density") +
+  ggtitle("eta = 4")
+
+ggplot(tibble(rho = c(-0.99, 0.99)), aes(rho)) +
+  stat_function(fun = dlkjcorr2, geom = "line", args = list(eta = .9)) +
+  ylab("density") +
+  ggtitle("eta = .9")
+```
+
+\begin{equation}
+\begin{aligned}
+\tau_{u_1} &\sim \mathit{Normal}_+(0,20)\\
+\tau_{u_2} &\sim \mathit{Normal}_+(0,20)\\
+\rho_u &\sim \mathit{LKJcorr}(2)
+\end{aligned}
+\end{equation}
+
+```{r, message = FALSE, results = "hide",cache=TRUE}
+prior_h <- c(prior(normal(0, 10), class = Intercept),
+             prior(normal(0, 10), class = b, coef = c_cloze),
+             prior(normal(0, 50), class = sigma),
+             prior(normal(0, 20),
+                   class = sd, coef = Intercept,
+                   group = subj
+                   ),
+             prior(normal(0, 20),
+                   class = sd, coef = c_cloze,
+                   group = subj),
+             prior(lkj(2), class = cor, group = subj))
+fit_N400_h <- brm(n400 ~ c_cloze + (c_cloze | subj),
+                  prior = prior_h,
+                  data = df_eeg)
+```
+
+```{r plotfitN400h,fig.cap="Posteriors.", fig.height = 6.5}
+plot(fit_N400_h, nvariables = 6)
+```
+
+# Varying intercept and varying slopes for subject and item ("Maximal model")
+
+The term "maximal model" became mainstream in psycholinguistics and psychology
+after Barr et al 2013 came out. 
+
+ \begin{multline}
+  signal_n \sim \mathit{Normal}(\alpha + u_{subj[n],1} + w_{item[n],1} + c\_cloze_n \cdot  (\beta + u_{subj[n],2}+ w_{item[n],2}), \sigma)
+  \end{multline}
+
+* Priors:
+ \begin{equation}
+ \begin{aligned}
+   \alpha & \sim \mathit{Normal}(0,10) \\
+   \beta  & \sim \mathit{Normal}(0,10) \\
+    \sigma  &\sim \mathit{Normal}_+(0,50)\\
+    {\begin{pmatrix}
+    u_{i,1} \\
+    u_{i,2}
+    \end{pmatrix}}
+   &\sim {\mathcal {N}}
+    \left(
+   {\begin{pmatrix}
+    0\\
+    0
+   \end{pmatrix}}
+ ,\boldsymbol{\Sigma_u} \right) \\
+     {\begin{pmatrix}
+    w_{j,1} \\
+    w_{j,2}
+    \end{pmatrix}}
+   &\sim {\mathcal {N}}
+    \left(
+   {\begin{pmatrix}
+    0\\
+    0
+   \end{pmatrix}}
+ ,\boldsymbol{\Sigma_w} \right)
+ \end{aligned}
+ \end{equation}
+
+We have added the index  $j$, which represents each item, as we did with subjects;  $item[n]$ indicates the item that corresponds to the observation in the $n$-th row of the data frame.
+
+We have hyperparameters and hyperpriors as before:
+
+\begin{equation}
+\begin{aligned}
+ \boldsymbol{\Sigma_u} & =
+{\begin{pmatrix}
+\tau_{u_1}^2 & \rho_u \tau_{u_1} \tau_{u_2} \\
+\rho_u \tau_{u_1} \tau_{u_2} & \tau_{u_2}^2
+\end{pmatrix}}\\
+ \boldsymbol{\Sigma_w} & =
+{\begin{pmatrix}
+\tau_{w_1}^2 & \rho_w \tau_{w_1} \tau_{w_2} \\
+\rho_w \tau_{w_1} \tau_{w_2} & \tau_{w_2}^2
+\end{pmatrix}}
+ \end{aligned}
+\end{equation}
+
+\begin{equation}
+\begin{aligned}
+\tau_{u_1} &\sim \mathit{Normal}_+(0,20)\\
+\tau_{u_2} &\sim \mathit{Normal}_+(0,20)\\
+\rho_u &\sim \mathit{LKJcorr}(2) \\
+\tau_{w_1} &\sim \mathit{Normal}_+(0,20)\\
+\tau_{w_2} &\sim \mathit{Normal}_+(0,20)\\
+\rho_w &\sim \mathit{LKJcorr}(2) \\
+\end{aligned}
+\end{equation}
+
+```{r}
+prior_sih_full <-
+  c(prior(normal(0, 10), class = Intercept),
+    prior(normal(0, 10), class = b, coef = c_cloze),
+    prior(normal(0, 50), class = sigma),
+    prior(normal(0, 20),
+          class = sd, coef = Intercept,
+          group = subj),
+    prior(normal(0, 20),
+          class = sd, coef = c_cloze,
+          group = subj),
+    prior(lkj(2), class = cor, group = subj),
+    prior(normal(0, 20),
+          class = sd, coef = Intercept,
+          group = item),
+    prior(normal(0, 20),
+          class = sd, coef = c_cloze,
+          group = item),
+    prior(lkj(2), class = cor, group = item))
+```
+
+```{r, cache=TRUE,message = FALSE, results = "hide"}
+fit_N400_sih <- brm(n400 ~ c_cloze + (c_cloze | subj) +
+                      (c_cloze | item),
+                    prior = prior_sih_full,
+                    data = df_eeg)
+```
+
+We can also simplify the call to `brms`, when we assign the same priors to the by-subject and by-item parameters:
+
+```{r, message = FALSE, results = "hide"}
+prior_sih <-
+  c(prior(normal(0, 10), class = Intercept),
+    prior(normal(0, 10), class = b),
+    prior(normal(0, 50), class = sigma),
+    prior(normal(0, 20), class = sd),
+    prior(lkj(2), class = cor))
+```
+
+```{r,cache=TRUE,message = FALSE, results = "hide"}
+fit_N400_sih <- brm(n400 ~ c_cloze + (c_cloze | subj) +
+                      (c_cloze | item),
+                    prior = prior_sih,
+                    data = df_eeg)
+```
+
+
+```{r}
+short_summary(fit_N400_sih)
+```
+
+```{r fitN400sih, fig.height = 11,fig.cap="The posterior distributions of the parameters in the model with varying intercepts and varying slopes for subjects and items."}
+plot(fit_N400_sih, nvariables = 9)
+```
+
+# Beyond the maximal model: Distributional regression
+
+\begin{equation}
+\begin{aligned}
+  signal_n &\sim \mathit{Normal}(\alpha + u_{subj[n],1} + w_{item[n],1} + \\             &  \hspace{2cm} c\_cloze_n \cdot  (\beta + u_{subj[n],2}+ w_{item[n],2}), \sigma_n)\\
+  \sigma_n &= \exp(\sigma_\alpha + \sigma_{u_{subj[n]}})
+\end{aligned}
+\end{equation}
+
+\begin{equation}
+\begin{aligned}
+  \sigma_\alpha &\sim \mathit{Normal}(0,log(50))\\
+  \sigma_u &\sim \mathit{Normal}(0, \tau_{\sigma_u}) \\
+  \tau_{\sigma_u} &\sim \mathit{Normal}_+(0, 5)
+\end{aligned}
+\end{equation}
+
+```{r, message = FALSE, results = "hide"}
+prior_s <-
+  c(prior(normal(0, 10), class = Intercept),
+    prior(normal(0, 10), class = b),
+    prior(normal(0, 20), class = sd),
+    prior(lkj(2), class = cor),
+    prior(normal(0, log(50)), class = Intercept, dpar = sigma),
+    prior(normal(0, 5),
+          class = sd, group = subj,
+          dpar = sigma))
+```
+
+```{r, message = FALSE, results = "hide",cache=TRUE}
+fit_N400_s <- brm(brmsformula(
+  n400 ~ c_cloze + (c_cloze | subj) + (c_cloze | item),
+  sigma ~ 1 + (1 | subj)),
+  prior = prior_s, data = df_eeg)
+```
+
+Inspect the output below; notice that our estimate for the effect of cloze
+remains very similar to that of the model `fit_N400_sih`.
+
+Compare the two models' estimates:
+
+```{r}
+posterior_summary(fit_N400_sih, variable = "b_c_cloze")
+```
+
+```{r}
+posterior_summary(fit_N400_s, variable = "b_c_cloze")
+```
+
+# A log-normal model of the Stroop effect
+
+\begin{equation}
+  rt_n \sim \mathit{LogNormal}(\alpha + u_{subj[n],1}  + c\_cond_n \cdot  (\beta + u_{subj[n],2}), \sigma)
+\end{equation}
+
+\begin{equation}
+\begin{aligned}
+  \mu_{incongruent} &= \alpha + 1 \cdot  \beta \\
+  \mu_{congruent} &= \alpha + -1 \cdot  \beta
+  \end{aligned}
+\end{equation}
+
+ \begin{equation}
+ \begin{aligned}
+   \alpha & \sim \mathit{Normal}(6, 1.5) \\
+   \beta  & \sim \mathit{Normal}(0, 0.01) \\
+    \sigma  &\sim \mathit{Normal}_+(0, 1)
+ \end{aligned}
+ \end{equation}
+
+ \begin{equation}
+ \begin{aligned}
+    {\begin{pmatrix}
+    u_{i,1} \\
+    u_{i,2}
+    \end{pmatrix}}
+   &\sim {\mathcal {N}}
+    \left(
+   {\begin{pmatrix}
+    0\\
+    0
+   \end{pmatrix}}
+ ,\boldsymbol{\Sigma_u} \right)
+ \end{aligned}
+ \end{equation}
+
+\begin{equation}
+\begin{aligned}
+ \boldsymbol{\Sigma_u} & =
+{\begin{pmatrix}
+\tau_{u_1}^2 & \rho_u \tau_{u_1} \tau_{u_2} \\
+\rho_u \tau_{u_1} \tau_{u_2} & \tau_{u_2}^2
+\end{pmatrix}}
+\end{aligned}
+\end{equation}
+
+\begin{equation}
+\begin{aligned}
+\tau_{u_1} &\sim \mathit{Normal}_+(0,1)\\
+\tau_{u_2} &\sim \mathit{Normal}_+(0,1)\\
+\rho_u &\sim \mathit{LKJcorr}(2)
+\end{aligned}
+\end{equation}
+
+We restrict ourselves to the correct trials only, and add a `c_cond` predictor, sum-coded as described earlier.
+
+```{r stroopdata, message = FALSE}
+data("df_stroop")
+(df_stroop <- df_stroop %>%
+  mutate(c_cond = if_else(condition == "Incongruent", 1, -1)))
+```
+
+Fit the model.
+
+```{r stroopm1, message = FALSE, results = "hide", cache = TRUE}
+fit_stroop <- brm(RT ~ c_cond + (c_cond | subj),
+                  family = lognormal(),
+                  prior =
+                    c(prior(normal(6, 1.5), class = Intercept),
+                      prior(normal(0, .01), class = b),
+                      prior(normal(0, 1), class = sigma),
+                      prior(normal(0, 1), class = sd),
+                      prior(lkj(2), class = cor)),
+                  data = df_stroop)
+```
+
+
+We will focus on $\beta$ (but you can verify that there is nothing surprising in the other parameters in the model `fit_stroop` ).
+
+```{r}
+posterior_summary(fit_stroop, variable = "b_c_cond")
+```
+
+# Class exercise 1
+
+This exercise tests your ability to map the `lme4` syntax for linear mixed models to the underlying mathematical/statistical model. This skill is important because in later chapters we will go from the mathematical statement of the model to Stan syntax. 
+
+The Dillon et al 2013 data set looks at interference effects in reflexives in English. We look at a simplified version of these data.
+
+```{r}
+library(bcogsci)
+data("df_dillonE1")
+head(df_dillonE1)
+```
+
+I have removed six other conditions, and focus only on two conditions (so this design is not completely correct; we will return to the full design after the contrast coding lectures).  
+
+The two conditions are as follows (both are ungrammatical sentences):
+
+- High interference: The amateur bodybuilder who worked with the *personal trainers* amazingly injured *themselves* on the lightest weights.
+- Low interference: The amateur bodybuilder who worked with the *personal trainer* amazingly injured *themselves* on the lightest weights.
+
+Theory predicts a difference between high and low interference conditions in reading time, at the word themselves. The reason is that there is an illusion of grammaticality in the high interference condition due to local agreement between trainers and themselves. For details, see the original paper.
+
+If we compute grand averages, we see that high interference conditions are indeed read faster than low interference conditions:
+
+```{r}
+round(with(df_dillonE1,tapply(rt,int,mean)))
+```
+
+## Your tasks
+
+- First, set up an appropriate contrast coding for this design: +1/2 for high interference and -1/2 for low interference:
+
+```{r}
+df_dillonE1$c_int<-ifelse(df_dillonE1$int=="low",-1/2,1/2)
+```
+
+Fit the following models in brms. You will have to decide on priors. **For each model, write down the underlying statistical model in mathematical notation**.
+
+
+- A no pooling model analogous to this frequentist one:
+
+```{r}
+library(lme4)
+m1<-lmList(log(rt)~c_int|subj,df_dillonE1)
+## separate estimates
+m1
+```
+- A complete pooling model
+
+```{r}
+m2<-lm(log(rt)~c_int,df_dillonE1)
+summary(m2)
+## Here is one reason why this model is wrong:
+acf(residuals(m2))
+```
+
+- A linear mixed model with varying intercepts for subject and for item
+
+```{r}
+m3<-lmer(log(rt)~c_int+(1|subj)+(1|item),df_dillonE1)
+summary(m3)
+## look at how the acf changes compared to m2:
+acf(residuals(m3))
+
+```
+
+- A linear mixed model with varying intercepts and varying slopes for subject and for item, with no correlation
+
+```{r}
+m4<-lmer(log(rt)~c_int+(1+c_int||subj)+(1+c_int||item),df_dillonE1)
+summary(m4)
+```
+
+- A linear mixed model with varying intercepts and varying slopes for subject and for item, with correlation
+
+```{r}
+m5<-lmer(log(rt)~c_int+(1+c_int|subj)+(1+c_int|item),df_dillonE1)
+summary(m5)
+## look at how the acf changes compared to m3:
+acf(residuals(m5))
+```
+
+Notice that the effect disappears in the above models when the varying slopes are added---why is that? Hint: Barr et al 2013.
+
+# Class exercise 2
+
+Here is a $2\times 2$ repeated measures factorial design:
+
+```{r}
+data("df_smithE1")
+head(df_smithE1)
+```
+
+There are two factors: Semantic similarity (levels: similar and dissimilar), and the number feature on the second noun (singular vs plural):
+
+a. Dissimilar, N2 singular:
+The canoe by the cabin likely *was* damaged in the heavy storm.
+
+b. Dissimilar, N2 plural:
+The canoe by the cabins likely *was* damaged in the heavy storm.
+
+c. Similar, N2 singular:
+The canoe by the kayak likely *was* damaged in the heavy storm.
+
+d. Similar, N2 plural:
+The canoe by the kayaks likely *was* damaged in the heavy stor
+
+The predictions (from a sentence processing theory) are:
+
+- Main effect of similarity
+- Interaction between similarity and number (larger slowdown due to singular second noun in similar conditions than in dissimilar conditions). 
+
+The original paper (their experiment 1) is:
+
+Smith, G., Franck, J., & Tabor, W. (2021). Encoding interference effects support self-organized sentence processing. Cognitive Psychology, 124, 101356.
+
+The following model would be appropriate (I will discuss the warning in class):
+
+```{r}
+df_smithE1$N2<-ifelse(df_smithE1$N2Factor=="N2sg",1/2,-1/2)
+df_smithE1$Sem<-ifelse(df_smithE1$SemFactor=="SemSim",1/2,-1/2)
+df_smithE1$N2xSem<-df_smithE1$N2*df_smithE1$Sem
+m<-lmer(log(RT)~N2+Sem+N2xSem+
+          (1+N2+Sem+N2xSem|Participant)+
+          (1+N2+Sem+N2xSem|StimSet),
+        df_smithE1)
+summary(m)
+```
+
+The `brms` output may be more transparent. In brms (using default priors!):
+
+```{r cache=TRUE, message = FALSE, results = "hide"}
+m_brms<-brm(log(RT)~N2+Sem+N2xSem+
+              (1+N2+Sem+N2xSem|Participant)+
+              (1+N2+Sem+N2xSem|StimSet),
+            df_smithE1,
+            family=lognormal())
+```
+
+```{r}
+short_summary(m_brms)
+```
+
+**The variance-covariance matrices** 
+
+Write down the full model, along with the variance-covariance matrices for the Participant and StimSet random effects.
+
+# Historical methods of data analysis and their connection to linear mixed models: t-tests and repeated measures ANOVA
+
+Function for outputting t-test results in a more human-readable and more compact manner:
+
+```{r}
+summary_ttest <- function(res, paired = TRUE, units = "ms") {
+  obs_t <- round(res$statistic, 2)
+  dfs <- round(res$parameter)
+  pval <- round(res$p.value, 3)
+  ci <- round(res$conf.int, 2)
+  est <- round(res$estimate, 2)
+  if (paired == TRUE) {
+    print(paste(
+      paste("t(", dfs, ")=",
+        obs_t,
+        sep = ""
+      ),
+      paste("p=", pval, sep = "")))
+      print(paste("est.: ", est, " [", 
+                  ci[1], ",", ci[2], "] ", 
+                  units, sep = "")
+    )
+  } else {
+    print(paste(
+      paste("t(", dfs, ")=",
+        obs_t,
+        sep = ""
+      ),
+      paste("p=", pval, sep = "")))
+      print(paste(paste("est. 1: ", est[1], sep = ""),
+      paste("est. 2: ", est[2], sep = ""),
+      paste("CI of diff. in means: [", ci[1], ",", ci[2], "]", sep = "")))
+  }
+}
+```
+
+
+Paired t-test are the traditional way to analyze such data. Here's how this is done, and here is the connection to linear mixed models.
+
+```{r}
+## all four levels: needed for interaction below:
+bysubj <- aggregate(log(RT) ~ Participant +
+  N2Factor + SemFactor,
+mean,
+data = df_smithE1
+)
+
+colnames(bysubj)[4]<-"LogRT"
+
+bysubjN2 <- aggregate(log(RT) ~ Participant +
+  N2Factor,
+mean,
+data = df_smithE1
+)
+
+bysubjSem <- aggregate(log(RT) ~ Participant +
+  SemFactor,
+mean,
+data = df_smithE1
+)
+
+colnames(bysubjN2)[3]<-"LogRT"
+colnames(bysubjSem)[3]<-"LogRT"
+
+## main effects:
+
+summary_ttest(
+  t.test(subset(bysubjN2,N2Factor=="N2pl")$LogRT,
+         subset(bysubjN2,N2Factor=="N2sg")$LogRT,
+         paired=TRUE))
+
+summary_ttest(
+  t.test(subset(bysubjSem,SemFactor=="SemSim")$LogRT,
+         subset(bysubjSem,SemFactor=="SemDissim")$LogRT,
+         paired=TRUE))
+
+## interaction:
+## difference between N2pl and N2sg in SemSim level:
+d1<- subset(bysubj,N2Factor=="N2pl" & SemFactor=="SemSim")$LogRT-
+  subset(bysubj,N2Factor=="N2sg" & SemFactor=="SemSim")$LogRT
+
+## difference between N2pl and N2sg in SemDissim level:
+d2<- subset(bysubj,N2Factor=="N2pl" & SemFactor=="SemDissim")$LogRT-
+  subset(bysubj,N2Factor=="N2sg" & SemFactor=="SemDissim")$LogRT
+
+## interaction: difference of differences:
+summary_ttest(t.test(d2-d1))
+```
+
+These are essentially equivalent to a single linear mixed model on the aggregated data:
+
+```{r}
+bysubj$N2<-ifelse(bysubj$N2Factor=="N2sg",1/2,-1/2)
+bysubj$Sem<-ifelse(bysubj$SemFactor=="SemSim",1/2,-1/2)
+bysubj$N2xSem<-bysubj$N2*bysubj$Sem
+m_aggregated<-lmer(LogRT~N2+Sem+N2xSem+(1|Participant),bysubj)
+summary(m_aggregated)
+```
+
+## Some important points to note
+
+- The linear mixed model above on the aggregated data is carrying out all three t-tests  (the two main effects and interaction) simultaneously.
+
+- We can only have by participant intercepts, no slopes, as we have only one data point per condition per participant.
+
+```{r}
+## This will not work:
+#m_aggregatedFULL<-lmer(LogRT~N2+Sem+N2xSem+(1+N2+Sem+N2xSem|Participant),bysubj)
+```
+
+- Compare with the model with the unaggregated data (this is a more realistic model):
+
+```{r}
+summary(m)
+```
+
+- Notice that the sign of the main effect or interaction depends on how one sets up the contrast coding!
+
+- Repeated measures ANOVA is equivalent to the three t-tests above:
+
+
+```{r}
+library(rstatix)
+
+subj_anova<-anova_test(data = bysubj,
+           dv = LogRT,
+wid = Participant,
+within = c(N2Factor,SemFactor)
+)
+
+get_anova_table(subj_anova)
+```
+
+Notice that the square roots of the F-scores will be essentially the same (modulo some discrepancies due to numerical inaccuracies) as the t-test values in the paired t-tests:
+
+```{r}
+## main effect N2Factor, F-score to t-value of 1.24:
+sqrt(1.035)
+## main effect SemFactor, F-score to t-value of 2.32:
+sqrt(4.644)
+## interaction, F-score to absolute t-value of 0.65:
+sqrt(0.427)
+```

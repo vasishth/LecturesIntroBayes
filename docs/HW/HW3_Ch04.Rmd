@@ -1,0 +1,62 @@
+---
+title: "HW 3"
+author: "Shravan Vasishth"
+date: ""
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+source("index.R")
+```
+
+# Exercise 1: A simple linear regression: Power posing and testosterone.
+
+Load the following data set:
+
+```{r}
+data("df_powerpose")
+head(df_powerpose)
+```
+
+The data set, which was originally published in Carney et al 2010^[Carney, D. R., Cuddy, A. J., and Yap, A. J. (2010). Power posing: Brief nonverbal displays affect neuroendocrine levels and risk tolerance. Psychological Science, 21(10), 1363-1368.] but released in modified form later, shows the testosterone levels of 39 different individuals, before and after treatment, where treatment refers to each individual being assigned to a high power pose or a low power pose. In the original paper by Carney et al., the unit given for testosterone measurement (estimated from saliva samples) was picograms per milliliter (pg/ml). One picogram per milliliter is 0.001 nanogram per milliliter (ng/ml). 
+
+The research hypothesis is that on average, assigning a subject a high power pose vs. a low power pose will lead to higher testosterone levels after treatment. Assuming that you know nothing about typical ranges of testosterone using salivary measurement, you can use the default priors in `brms` for the target parameter(s). 
+
+
+Investigate this claim using a linear model and the default priors of `brms`. You'll need to estimate the effect of a new variable that encodes the change in testosterone. 
+
+# Exercise 2: Another linear regression model: Revisiting attentional load effect on pupil size.
+
+Here, we revisit the analysis shown in chapter 4, on how attentional load affects pupil size. 
+
+a. Our priors for this experiment were quite arbitrary. How do the prior predictive distributions look like? Do they make sense? 
+
+b. Is our posterior distribution sensitive to the priors that we selected? Perform a sensitivity analysis to find out whether the posterior is affected by our choice of prior for the $\sigma$.
+
+c. Our data set includes also a column that indicates the trial number. Could it be that trial has also an effect on the pupil size? As in `lm`, we indicate another main effect with a `+` sign. How would you communicate the new results? 
+
+# Exercise 3: Log-normal model: Revisiting the effect of trial on finger tapping times.
+
+We continue considering the effect of trial on finger tapping times. 
+
+a.  Estimate the slowdown in milliseconds between the last two times the subject pressed the space bar in the experiment. So, if there were $n$ trials, the change in tapping times from the $n-1$-th trial to the $n$-th trial.
+
+b. How would you change your model (keeping the log-normal likelihood) so that it includes centered log-transformed trial numbers or square-root-transformed trial numbers (instead of centered trial numbers)? Does the effect in milliseconds change? 
+
+
+# Exercise 4: Logistic regression: Revisiting the effect of set size on free recall.
+
+Our data set also includes a column coded as `tested` that indicates the position of the queued word. Could it be that position also has an effect on recall accuracy? How would you incorporate this in the model? (We indicate another main effect with a `+` sign).  
+
+# Exercise 5: Red is the sexiest color. 
+
+Load the following data set:
+
+```{r}
+data("df_red")
+head(df_red)
+```
+
+The data set is from a study by Beall and Tracy 2013^[Beall, A. T., and Tracy, J. L. (2013). Women are more likely to wear red or pink at peak fertility. Psychological Science, 24(9), 1837-1841.] that contains information about the color of the clothing worn (red, pink, or red or pink) when the subject (female) is at risk of becoming pregnant (is ovulating, self-reported). The broader issue being investigated is whether women wear red more often when they are ovulating (in order to attract a mate). Using logistic regressions, fit three different models to investigate whether ovulating increases the probability of wearing (a) red, (b) pink, or (c) either pink or red. Use priors that are reasonable (in your opinion).

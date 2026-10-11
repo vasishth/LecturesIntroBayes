@@ -1,0 +1,1156 @@
+---
+title: "Chapters 9 and 10: Hierarchical models and custom distributions"
+runningheader: "Bayes 2" # only for pdf output
+subtitle: "Advanced inference and modeling using Bayesian methods" # only for html output
+author: "Shravan Vasishth"
+date: "`r Sys.Date()`"
+output:
+  tufte::tufte_handout: default
+  tufte::tufte_html:
+    citation_package: natbib
+    latex_engine: xelatex
+  tufte::tufte_book:
+    citation_package: natbib
+    latex_engine: xelatex
+bibliography: BayesCogSci.bib
+link-citations: no
+header-includes: |
+  \usepackage{tikz}
+  \usepackage{enumerate}
+  \usepackage[shortlabels]{enumitem}
+  \usepackage{amsmath}
+  \usepackage{comment}
+  \setcounter{secnumdepth}{4}
+---
+
+```{r include=FALSE}
+knitr::opts_chunk$set(fig.width=5, fig.height=3)
+library(ggplot2)
+theme_set(theme_bw())
+library(reshape2)
+library(dplyr)
+library(stats)
+library(brms)
+library(invgamma)
+library(TruncatedNormal)
+library(truncnorm)
+library(bayesplot)
+library(purrr)
+library(MASS)
+library(rstan)
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+library(bcogsci)
+library(extraDistr)
+```
+
+\tableofcontents
+
+\vspace{1cm}
+
+\clearpage
+
+\Large
+
+# Textbook
+
+Introduction to Bayesian Data Analysis for Cognitive Science
+
+Nicenboim, Schad, Vasishth
+
+- Online version: https://bruno.nicenboim.me/bayescogsci/
+- Source code: https://github.com/bnicenboim/bayescogsci
+- Physical book: [here](https://www.routledge.com/Introduction-to-Bayesian-Data-Analysis-for-Cognitive-Science/Nicenboim-Schad-Vasishth/p/book/9780367359331)
+
+**Be sure to read the textbook's chapter 8 in addition to watching this lecture**.
+
+
+# Varying intercept model with Stan
+
+Recall that earlier we fit models to investigate the effect of cloze probability on \index{EEG} EEG averages in the \index{N400} N400 spatiotemporal time window. For our first model, we'll make the (implausible) assumption that only the average signal varies across subjects, but all subjects share the same effect of \index{Cloze probability} cloze probability. This  means that the \index{Likelihood} likelihood  incorporates the assumption that  the intercept, $\alpha$, is adjusted with the term $u_i$ for each subject.
+
+ \begin{equation}
+  signal_n \sim \mathit{Normal}(\alpha + u_{subj[n]} + c\_cloze_n \cdot \beta,\sigma)
+\end{equation}
+ 
+\begin{equation}
+ \begin{aligned}
+ \alpha &\sim \mathit{Normal}(0,10)\\
+ \beta  &\sim \mathit{Normal}(0,10)\\
+ u &\sim \mathit{Normal}(0,\tau_u)\\
+ \tau_{u} &\sim \mathit{Normal}_+(0,20) \\
+ \sigma  &\sim \mathit{Normal}_+(0,50)
+ \end{aligned}
+ \end{equation}
+
+Here $n$ represents each observation, the $n$th row in the data frame and $subj[n]$ is the subject that corresponds to observation $n$. We present the mathematical notation of the likelihood with \index{Multiple indexing} "multiple indexing" [see chapter 19 of the User's guide]: the index of $u$ is provided by the vector $subj$.
+
+
+```{r, echo = FALSE}
+subj <- as.numeric(as.factor(df_eeg$subj))
+Nobs <- length(nrow(df_eeg))
+Nsubj <- length(unique(subj))
+N <- nrow(df_eeg)
+```
+
+Before we discuss the Stan implementation, let's see what the vector $\mu$, the \index{Location} location of the normal likelihood, looks like. There are `r N ` observations; that means that $\boldsymbol{\mu}=\{\mu_1,\mu_2, \ldots, \mu_{`r N`}\}$. We have `r Nsubj` subjects which means that $\boldsymbol{u}=\{u_1,u_2, \ldots, u_{`r Nsubj`}\}$. The following equation shows that the use of multiple indexing allows us to have a vector of adjustments with only `r Nsubj` different elements, with a total length of `r N`. In the equation below, the multiplication operator $\circ$ is the  \index{Hadamard product} Hadamard or elementwise product: when we write $X\circ B$, both $X$ and $B$ have the same dimensions $m\times n$, and each cell in location $[i,j]$ (where $i=1,\dots,m$, and $j=1,\dots,n$) in $X$ and $B$ are multiplied to give a matrix that also has dimensions $m\times n$.^[Whereas in \ref{eq:broadcasted}, $\alpha$ and $\beta$ are "broadcasted" into a 2863-vector for ease of exposition, Stan uses vector-scalar arithmetic.]
+
+
+
+\begin{equation} \label{eq:broadcasted}
+ \begin{aligned}
+    \boldsymbol{\mu} &=
+    \begin{bmatrix}
+        \mu_1 \\
+        \mu_2 \\
+        \ldots \\
+        \mu_{101} \\
+        \mu_{102} \\
+        \ldots \\
+        \mu_{215} \\
+        \mu_{216} \\
+        \mu_{217} \\
+        \ldots \\
+        \mu_{1000} \\
+        \ldots \\
+        \mu_{`r N`}
+    \end{bmatrix}
+=
+    \begin{bmatrix}
+        \alpha \\
+        \alpha \\
+        \ldots \\
+        \alpha \\
+        \alpha \\
+        \ldots \\
+        \alpha \\
+        \alpha \\
+        \alpha \\
+        \ldots \\
+        \alpha \\
+        \ldots \\
+        \alpha
+    \end{bmatrix}
++
+\begin{bmatrix}
+u_{subj[1]} \\
+u_{subj[2]} \\
+\ldots \\
+u_{subj[101]} \\
+u_{subj[102]} \\
+\ldots \\
+u_{subj[215]} \\
+u_{subj[216]} \\
+u_{subj[217]} \\
+\ldots \\
+u_{subj[1000]} \\
+\ldots \\
+u_{subj[`r N`]}
+\end{bmatrix}
++
+\begin{bmatrix}
+ccloze_1 \\
+ccloze_2 \\
+\ldots \\
+ccloze_{101} \\
+ccloze_{102} \\
+\ldots \\
+ccloze_{215} \\
+ccloze_{216} \\
+ccloze_{217} \\
+\ldots \\
+ccloze_{1000} \\
+\ldots \\
+ccloze_{`r N`}
+\end{bmatrix}
+\circ
+\begin{bmatrix}
+\beta \\
+\beta \\
+\ldots \\
+\beta \\
+\beta \\
+\ldots \\
+\beta \\
+\beta \\
+\beta \\
+\ldots \\
+\beta \\
+\ldots \\
+\beta
+\end{bmatrix} \\
+& =
+\begin{bmatrix}
+\alpha \\
+\alpha \\
+\ldots \\
+\alpha \\
+\alpha \\
+\ldots \\
+\alpha \\
+\alpha \\
+\alpha \\
+\ldots \\
+\alpha \\
+\ldots \\
+\alpha
+\end{bmatrix}
++
+\begin{bmatrix}
+u_{`r  subj[1]`} \\
+u_{`r subj[2]`} \\
+\ldots \\
+u_{`r subj[101]`} \\
+u_{`r subj[102]`} \\
+\ldots \\
+u_{`r subj[215]`} \\
+u_{`r subj[216]`} \\
+u_{`r subj[217]`} \\
+\ldots \\
+u_{`r subj[1000]`} \\
+\ldots \\
+u_{`r subj[N]` }
+\end{bmatrix}
++
+\begin{bmatrix}
+{`r df_eeg$c_cloze[1]`} \\
+{`r df_eeg$c_cloze[2]`} \\
+\ldots \\
+{`r df_eeg$c_cloze[101]`} \\
+{`r df_eeg$c_cloze[102]`} \\
+\ldots \\
+{`r df_eeg$c_cloze[215]`} \\
+{`r df_eeg$c_cloze[216]`} \\
+{`r df_eeg$c_cloze[217]`} \\
+\ldots \\
+{`r df_eeg$c_cloze[1000]`} \\
+\ldots \\
+{`r df_eeg$c_cloze[N]` }
+\end{bmatrix}
+\circ
+\begin{bmatrix}
+\beta \\
+\beta \\
+\ldots \\
+\beta \\
+\beta \\
+\ldots \\
+\beta \\
+\beta \\
+\beta \\
+\ldots \\
+\beta \\
+\ldots \\
+\beta
+\end{bmatrix}
+\end{aligned}
+\end{equation} 
+
+
+
+
+In this model, each subject has their own intercept adjustment $u_i$, with $i$ indexing the subjects. If $u_i$ is positive, the subject has a more positive EEG signal than the average over all the subjects; if $u_i$ is negative, then the subject has a more negative EEG signal than the average; and if $u_i$ is $0$, then the subject has the same EEG signal as the average. As we discussed earlier, since we are estimating $\alpha$ and $u$ at the same time and we assume that the average of the $u$'s is $0$ (since it is assumed to be normally distributed with a mean of zero and there is an intercept to absorb any non-zero mean), whatever the subjects have in common "goes" to $\alpha$, and $u$ only "absorbs" the differences between subjects through the variance component $\tau_u$.
+
+This model is implemented in the file `hierarchical1.stan`, available in the `bcogsci` package: 
+
+```{r hierarchical-stan, echo = FALSE}
+hierarchical1 <- system.file("stan_models", "hierarchical1.stan", package = "bcogsci")
+hierarchical2 <- system.file("stan_models", "hierarchical2.stan", package = "bcogsci")
+hierarchical3 <- system.file("stan_models", "hierarchical3.stan", package = "bcogsci")
+hierarchical_corr <- system.file("stan_models", "hierarchical_corr.stan", package = "bcogsci")
+hierarchical_corr2 <- system.file("stan_models", "hierarchical_corr2.stan", package = "bcogsci")
+hierarchical_corr_by <- system.file("stan_models", "hierarchical_corr_by.stan", package = "bcogsci")
+```
+
+```{stan output.var = "hierarchical1_stan", code = readLines(hierarchical1),  tidy = TRUE, comment="", eval = FALSE, cache = FALSE, cache.lazy = FALSE} 
+```
+
+In the Stan code above, we use 
+
+`array [N] int<lower = 1, upper = N_subj> subj;` 
+
+to define a one-dimensional \index{\texttt{array}} *array* of `N` elements that contains integers (bounded between 1 and `N_subj`). As explained earlier, the difference between vectors and one-dimensional arrays is that vectors can only contain real numbers and can be used with matrix algebra functions, and arrays can contain any type but can't be used with matrix algebra functions. We use `normal_lpdf` rather than `normal_glm_lpdf` since at the moment there is no  efficient likelihood implementation of hierarchical generalized linear models.
+
+The following code centers the predictor cloze and stores the data required by the Stan model in a list. Because we are using `subj` as a vector of indices, we need to be careful to have integers starting from `1` and ending in `N_subj` without skipping any number (but the order of the subject ids won't matter).^[It often happens that the subject ids are not in sequence in a given data frame. This can happen when, for example, one has lost some subjects due to incomplete data or for some other reason. In such situations, we can re-number the subjects sequentially as follows: type   `as.numeric(as.factor(df_eeg$subj))` to transform a vector where some numbers are skipped into a vector with consecutive numbers. For example, both `as.numeric(as.factor(c(1, 3, 4, 7, 9)))` and `as.numeric(as.factor(paste0("subj", c(1, 3, 4, 7, 9))))` will give as output `1 2 3 4 5`.]
+
+```{r, message = FALSE}
+data("df_eeg")
+df_eeg <- df_eeg %>%
+  mutate(c_cloze = cloze - mean(cloze))
+ls_eeg <- list(
+  N = nrow(df_eeg),
+  signal = df_eeg$n400,
+  c_cloze = df_eeg$c_cloze,
+  subj = df_eeg$subj,
+  N_subj = max(df_eeg$subj)
+)
+```
+
+Fit the model:
+
+```{r , message=FALSE, results="hide", cache=TRUE}
+hierarchical1 <- system.file("stan_models",
+                             "hierarchical1.stan",
+                             package = "bcogsci")
+fit_eeg1 <- stan(hierarchical1, data = ls_eeg)
+```
+
+Summary of the model:
+
+```{r}
+print(fit_eeg1, pars = c("alpha", "beta", "sigma", "tau_u"))
+```
+
+# Uncorrelated \index{Varying intercept and slopes} varying intercept and slopes model with Stan {#sec-uncorrstan}
+
+In the following model, we relax the strong assumption that every subject will be affected equally by the manipulation. For ease of exposition, we start by assuming that the adjustments for the intercept and slope are not correlated.
+
+\begin{equation} \label{eq:uncorrstanlik}
+  signal_n \sim \mathit{Normal}(\alpha + u_{subj[n],1} + c\_cloze_n \cdot (\beta+ u_{subj[n],2}),\sigma)
+\end{equation}
+
+\begin{equation} \label{eq:uncorrstanpriors}
+ \begin{aligned}
+ \alpha &\sim \mathit{Normal}(0,10)\\
+ \beta  &\sim \mathit{Normal}(0,10)\\
+ u_1 &\sim \mathit{Normal}(0,\tau_{u_1})\\
+ u_2 &\sim \mathit{Normal}(0,\tau_{u_2})\\
+ \tau_{u_1} &\sim \mathit{Normal}_+(0,20) \\
+ \tau_{u_2} &\sim \mathit{Normal}_+(0,20) \\
+ \sigma  &\sim \mathit{Normal}_+(0,50)
+ \end{aligned}
+\end{equation}
+
+We  implement this in Stan in `hierarchical2.stan`: 
+
+```{stan output.var = "hierarchical2_stan", code = readLines(hierarchical2),  tidy = TRUE, comment="", eval = FALSE, cache = FALSE, cache.lazy = FALSE} 
+```
+
+In the previous model, we assign the same prior distribution to both `tau_u[1]` and `tau_u[2]`, and thus in principle we could have written the two statements in one (we multiply by 2 because there are two PDFs that need to be corrected for the truncation):
+
+```
+  target += normal_lpdf(tau_u | 0, 20)  - 
+    2 * normal_lccdf(0 | 0, 20);
+```
+
+
+Fit the model as follows:
+
+```{r, message=FALSE, results="hide", warning = TRUE}
+hierarchical2 <- system.file("stan_models",
+                             "hierarchical2.stan",
+                             package = "bcogsci")
+fit_eeg2 <- stan(hierarchical2, data = ls_eeg)
+```
+
+We see that there are warnings. As we increase the complexity and the number of parameters, the sampler has a harder time exploring the parameter space.
+
+Show the summary of the model below:
+
+```{r}
+print(fit_eeg2, pars = c("alpha", "beta", "tau_u", "sigma"))
+```
+
+We see that `tau_u[2]` has a low number of effective samples (`n_eff`).
+
+The traceplots are displayed in Figure \ref{fig:traceploteeg2}.
+
+```{r traceploteeg2, fig.cap ="Traceplots of the parameters.",fig.margin=TRUE}
+traceplot(fit_eeg2, pars = c("alpha", "beta", "tau_u", "sigma"))
+```
+
+
+Figure \ref{fig:traceploteeg2} shows that the chains of the parameter `tau_u[2]` are not mixing properly. This parameter is specially problematic because there are not enough data from each subject to estimate this parameter accurately, its estimated mean is quite small (in comparison with `sigma`),  it's bounded by zero, and there is a dependency between this parameter and `u[, 2]`. This makes the \index{Exploration by the sampler} exploration by the sampler quite hard. 
+
+Pairs plots can be useful to uncover pathologies in the sampling, since we can visualize dependencies between samples, which  are in general problematic.^[See https://mc-stan.org/misc/warnings.html.] The following code creates a \index{Pair plot} pair plot where we see the samples of `tau_u[2]` against some of the adjustments to the slope `u`; see Figure \ref{fig:pairsfunnel}.
+
+```{r pairsfunnel, fig.cap = "Pair plots showing a relatively strong dependency (funnel-shaped clouds of samples) between the samples of $\tau_2$ and some of the by-subject adjustments to the slope.", warning = FALSE,fig.margin=TRUE}
+pairs(fit_eeg2, pars = c("tau_u[2]", "u[1,2]", "u[2,2]", "u[3,2]"))
+```
+
+Compare with `tau_u[1]` plotted against the by-subject adjustments to the intercept. In Figure \ref{fig:pairsblobs}, instead of funnels we see blobs, indicating no strong dependency between the parameters.
+
+
+
+```{r pairsblobs, fig.cap = "Pair plots showing no strong dependency (blob-shaped clouds of samples) between the samples of $\tau_1$ and some of the by-subject adjustments to the intercept.", warning = FALSE,fig.margin=TRUE}
+pairs(fit_eeg2, pars = c("tau_u[1]", "u[1,1]", "u[2,1]", "u[3,1]"))
+```
+
+In contrast to Figure \ref{fig:pairsblobs}, which shows \index{Blob-shaped clouds of samples} blob-shaped clouds of samples, Figure \ref{fig:pairsfunnel} shows a relatively strong dependency between the samples of some of the parameters of the model, in particular $\tau_2$ and the samples of $u_{i,2}$. This strong dependency is hindering the exploration of the sampler leading to the warnings we saw in Stan.
+However, the problem that the sampler faces is, in fact, more serious than what our initial plots show. Stan samples in an \index{Unconstrained space} *unconstrained* space where all the parameters can range from minus infinity to plus infinity, and then transforms back the parameters to the constrained space that we specified where, for example, a standard deviation parameter is restricted to be positive. This means that Stan is actually sampling from a transformed parameter equivalent to `log(tau_u[2])` rather than from `tau_u[2]`. We can use \index{\texttt{mcmc\_pairs}} `mcmc_pairs` to see the actual funnel; see Figure \ref{fig:scatterpairs}.
+
+```{r scatterpairs, fig.cap = "Pair plots showing a strong dependency (funnel-shaped clouds of samples) between the samples of $\tau_2$ and one of the by-subject adjustments to the intercept ($u_{1,2}$).",fig.margin=TRUE}
+mcmc_pairs(as.array(fit_eeg2),
+           pars = c("tau_u[2]", "u[1,2]"),
+           transform = list(`tau_u[2]` = "log")
+) 
+```
+
+At the neck of the funnel,  `tau_u[2]` is close to zero (and `log(tau_u[2])` is a negative number) and thus the adjustment `u` is constrained to be near $0$. This is a problem because a \index{Step size} step size that's optimized to work well in the broad part of the funnel will fail to work appropriately in the \index{Neck of the funnel} neck of the funnel and vice versa; see also \index{Neal's funnel} Neal's funnel and the \index{Optimization} optimization chapter of the User's guide (section 25.7 of the User's guide).
+There are two options: We might just remove the by-subject varying slope since it's not giving us much information anyway, or we can alleviate this problem by \index{Reparameterization} reparameterizing the model. In general, this sort of thing is  the trickiest and probably most annoying part of modeling. A model can be theoretically and mathematically sound, but still \index{Fail to converge} fail to converge. The best advice to solve this type of problem is to start small with simulated data where we know the true values of the parameters, and increase the complexity of the models gradually. Although in this example the problem was clearly in the parameterization of `tau_u[2]`, in many cases the biggest hurdle is to identify where the problem lies. Fortunately, the issue with `tau_u[2]` is a common problem which is easy to solve by using  a \index{Non-centered parameterization} non-centered parameterization. The next section explains the specific reparameterization we use for the improved version of our Stan code.
+
+# Aside: A simple non-centered parameterization
+
+
+The sampler can explore the parameter space more easily if its step size is appropriate for all the parameters. This is achieved when there are no strong  dependencies between parameters. We want to assume the following.
+
+\begin{equation}
+\mathbf{u}_{2} \sim \mathit{Normal}(0, \tau_{u_2})
+\end{equation}
+
+where $\mathbf{u}_{2}$ is the column vector of $u_{i,2}$'s. The index $i$ refers to the subject id.
+
+We can transform a vector $v$ into $z$-scores as follows.
+
+\begin{equation}
+\mathbf{z}_{v} =\frac{\mathbf{v} - mean(\mathbf{v})}{SD(\mathbf{v})}
+\end{equation}
+
+Transforming the parameter $u_2$ into $z$-scores amounts to centering it, so we can call this \index{Centered parameterization} centered parameterization.
+
+\begin{equation}
+\mathbf{z}_{u_2} =\frac{\mathbf{u}_{2} - 0}{\tau_{u_2}}
+\end{equation}
+
+where 
+\begin{equation}
+\mathbf{z}_{u_2} \sim \mathit{Normal}(0, 1)
+\end{equation}
+
+Now $\mathbf{z}_{u_2}$ is easier to sample because it doesn't depend on other parameters (in particular, it is no longer conditional on $\tau$) and its scale is $1$. Once we have sampled this centered parameter, we can derive the actual parameter we care about by carrying out the inverse operation, which is called a \index{Non-centered parameterization} non-centered parameterization:
+
+\begin{equation}
+\mathbf{u}_{2} = \mathbf{z}_{u_2} \cdot \tau_{u_2}
+\end{equation}
+
+A question that might be raised here is whether using a non-centered parameterization is always a good idea. Betancourt has pointed out that the extremeness of the dependency depends on the amount of data, and the efficacy of the parameterization depends on the strength of the data (on how informative the data is). When there is enough data, this parameterization is unnecessary and it may be more efficient to use the centered parameterization. However, cases where there is enough data to render this parameterization useless might also be cases where the partial pooling of the hierarchical models may not be needed in the first place. Although data from conventional lab experiments in psychology, psycholinguistics, and related areas seem to benefit from the non-centered parameterization, the jury is still out for larger data sets with thousands of subjects from crowdsourcing websites.
+
+# Back to the hierarchical model with uncorrelated random effects
+
+From a mathematical point of view, the following model is equivalent to the one described in Equations \ref{eq:uncorrstanlik} and \ref{eq:uncorrstanpriors}. However, as discussed previously, the computational implementation of the "new" model is more efficient. The following model includes the reparameterization of both adjustments $u_1$ and $u_2$, although the reparameterization of $u_1$ is not strictly necessary (we didn't see any problems in the trace plots), it won't hurt either and the Stan code will be simpler.
+
+
+\begin{equation} \label{eq:uncorrstanlik2}
+  signal_n \sim \mathit{Normal}(\alpha + u_{subj[n],1} + c\_cloze_n \cdot (\beta+ u_{subj[n],2}),\sigma)
+\end{equation}
+ 
+\begin{equation} \label{eq:uncorrstanpriors2}
+ \begin{aligned}
+ \alpha &\sim \mathit{Normal}(0,10)\\
+ \beta  &\sim \mathit{Normal}(0,10)\\
+ z_{u_1} &\sim \mathit{Normal}(0, 1)\\
+ z_{u_2} &\sim \mathit{Normal}(0, 1)\\
+ \tau_{u_1} &\sim \mathit{Normal}_+(0,20) \\
+ \tau_{u_2} &\sim \mathit{Normal}_+(0,20) \\
+ \sigma  &\sim \mathit{Normal}_+(0,50)\\
+ u_1 &= z_{u_1} \cdot \tau_{u_1}\\
+ u_2 &= z_{u_2} \cdot \tau_{u_2}
+ \end{aligned}
+\end{equation}
+
+
+
+The following Stan code (`hierarchical3.stan`) uses the previous parameterization, and introduces some new Stan functions:  \index{\texttt{to\_vector}} `to_vector()` converts a matrix  into a long column vector (in column-major order, that is, concatenating the columns from left to right); and \index{\texttt{std\_normal\_lpdf}} `std_normal_lpdf()`  implements the log PDF of a \index{Standard normal distribution} standard normal distribution, a normal distribution with location 0 and scale 1. This function is just a more efficient version of  `normal_lpdf(... | 0, 1)`. We also introduce a new optional \index{Block} block called \index{transformed parameters} `transformed parameters`. With each iteration of the sampler, the values of the parameters (i.e., `alpha`, `beta`, `sigma`,  and `z`) are available at the `transformed parameters` block, and we can derive new auxiliary variables based on them. In this case, we use `z_u` and `tau_u` to obtain `u`, that then becomes available in the `model` block. 
+
+```{stan output.var = "hierarchical3_stan", code = readLines(hierarchical3),  tidy = TRUE, comment="", eval = FALSE, cache = FALSE, cache.lazy = FALSE} 
+```
+
+By reparameterizing the model we can also optimize it more, we can convert the matrix `z_u` into a long column vector allowing us to use a single call of `std_normal_lpdf`. Fit the model named `hierarchical3.stan`.
+
+```{r , message=FALSE, results="hide",cache=TRUE}
+hierarchical3 <- system.file("stan_models",
+                             "hierarchical3.stan",
+                             package = "bcogsci")
+fit_eeg3 <- stan(hierarchical3, data = ls_eeg) 
+```
+
+Verify that the model worked as expected by printing its summary and traceplots; see Figure \ref{fig:traceploteeg3}.
+
+```{r traceploteeg3, fig.cap ="Traceplots of the parameters.",fig.margin=TRUE}
+print(fit_eeg3, pars = c("alpha", "beta", "tau_u", "sigma"))
+traceplot(fit_eeg3, pars = c("alpha", "beta", "tau_u", "sigma"))
+```
+
+Although the samples of `tau_u[2]` are still conditioned by the adjustments for the slope, `u[,2]`, these latter parameters are not the ones explored by the model, the auxiliary parameters, `z_u`, are the relevant ones for the sampler. The plots in Figures \ref{fig:pairstauu} and \ref{fig:pairstauz} show that although samples from `log(tau_u[2])` and `u[1,2]` depend on each other, samples from
+`log(tau_u[2])` and `z_u[1,2]` do not.
+
+
+```{r pairstauu, fig.cap ="Pair plots showing a clear dependency (funnel-shaped clouds of samples) between the samples of $\tau_2$ and some of the by-subject adjustments to the slope.", fold = TRUE,fig.margin=TRUE}
+mcmc_pairs(as.array(fit_eeg3),
+           pars = c("tau_u[2]", "u[1,2]"),
+           transform = list(`tau_u[2]` = "log"))
+```
+
+```{r pairstauz, fig.cap ="Pair plots showing no clear dependency between the samples of $\tau_2$ and some of the by-subject auxiliary parameters (`z\\_u`) used to build the adjustments to the slope.", fold = TRUE,fig.margin=TRUE}
+mcmc_pairs(as.array(fit_eeg3),
+           pars = c("tau_u[2]", "z_u[1,2]"),
+           transform = list(`tau_u[2]` = "log"))
+```
+
+# Correlated varying intercept varying slopes model 
+
+For the model with correlated varying intercepts and slopes, the likelihood remains identical to the model without a correlation between group-level intercepts and slopes. Priors and hyperpriors change to reflect the potential correlation between by-subject adjustments to intercepts and slopes:
+
+\begin{equation}
+  signal_n \sim \mathit{Normal}(\alpha + u_{subj[n],1} + c\_cloze_n \cdot  (\beta + u_{subj[n],2}),\sigma)
+\end{equation}
+ 
+
+The correlation is indicated in the  priors on the adjustments for vector of by-subject intercepts $u_{1}$ and the vector of by-subject slopes $u_{2}$.
+
+* Priors:
+ \begin{equation}
+ \begin{aligned}
+   \alpha & \sim \mathit{Normal}(0,10) \\
+   \beta  & \sim \mathit{Normal}(0,10) \\
+    \sigma  &\sim \mathit{Normal}_+(0,50)\\
+    {\begin{pmatrix}
+    u_{i,1} \\
+    u_{i,2}
+    \end{pmatrix}}
+   &\sim {\mathcal {N}}
+    \left(
+   {\begin{pmatrix}
+    0\\
+    0
+   \end{pmatrix}}
+ ,\boldsymbol{\Sigma_u} \right)
+ \end{aligned}
+ \end{equation}
+
+where $i = \{1, .., N_{subj} \}$
+
+\begin{equation}
+\boldsymbol{\Sigma_u} = 
+{\begin{pmatrix} 
+\tau_{u_1}^2 & \rho_u \tau_{u_1} \tau_{u_2} \\ 
+\rho_u \tau_{u_1} \tau_{u_2} & \tau_{u_2}^2
+\end{pmatrix}}
+\end{equation}
+
+\begin{equation}
+\begin{aligned}
+\tau_{u_1} &\sim \mathit{Normal}_+(0,20)\\
+\tau_{u_2} &\sim \mathit{Normal}_+(0,20)\\
+\rho_u &\sim \mathit{LKJcorr}(2) 
+\end{aligned}
+\end{equation}
+
+As a first attempt, we write this model following the mathematical notation as closely as possible. We'll see that this will be problematic in terms of efficient sampling and convergence. In this Stan model (`hierarchical_corr.stan`), we use some new functions and types:
+
+* \index{\texttt{corr\_matrix}} `corr_matrix[n] M;` defines a (square) matrix of $n$ rows and $n$ columns called $M$, symmetrical around a diagonal of ones.
+* \index{\texttt{rep\_row\_vector}} `rep_row_vector(X, n)` creates a row vector with $n$ columns filled with $X$.
+* \index{\texttt{quad\_form\_diag}} `quad_form_diag(M, V)` creates a \index{Quadratic form} *quadratic form* using the column vector $V$ as a diagonal matrix (a matrix with all zeros except for its diagonal), this function corresponds in Stan to: `diag_matrix(V) * M * diag_matrix(V)` and in R to `diag(V) %*% M %*% diag(V)`. This
+computes a \index{Variance-covariance matrix} variance-covariance matrix from the vector of \index{Standard deviation} standard deviations, $V$, and the \index{Correlation matrix} correlation matrix, $M$ (recall the generation of multivariate data in chapter 1).
+
+
+```{stan output.var = "hierarchical_corr_stan", code = readLines(hierarchical_corr),  tidy = TRUE, comment="", eval = FALSE, cache = FALSE, cache.lazy = FALSE} 
+```
+
+
+
+
+Problematic aspects of the model before the reparameterization, that is,  dependencies between parameters, are also present here. Fit the model as follows:
+
+```{r, message=FALSE, results="hide",cache=TRUE}
+hierarchical_corr <- system.file("stan_models",
+                                 "hierarchical_corr.stan",
+                                 package = "bcogsci")
+fit_eeg_corr <- stan(hierarchical_corr, data = ls_eeg)
+```
+
+
+
+As we expected, there are warnings and bad \index{Mixing of the chains} mixing of the chains for `tau_u[2]`; see also the traceplots in Figure \ref{fig:traceploteegcorr}.
+
+```{r}
+print(fit_eeg_corr, pars = c("alpha", "beta", "tau_u", "sigma"))
+```
+
+```{r traceploteegcorr, fig.cap ="Traceplots of `alpha`, `beta`, `tau\\_u`, and `sigma` from the model `fit\\_eeg\\_corr`.", fold = TRUE,fig.margin=TRUE}
+traceplot(fit_eeg_corr, pars = c("alpha", "beta", "tau_u", "sigma"))
+```
+
+The problem (which can also be discovered in a pairs plot) is the same one that we saw before: There is a strong dependency between `tau_u[2]` (in fact, `log(tau_u[2])`, which is the parameter dimension that the sampler considers) and `u`, creating a funnel. 
+
+The solution to this problem is the reparameterization of this model. The parameterization for this type of model uses a \index{Cholesky factorization} Cholesky factorization. The mathematics and the intuition behind this parameterization are explained next.
+
+# Aside: Cholesky factorization
+
+First, some definitions that we will need below. A matrix is square if the number of rows and columns is identical. A \index{Square matrix} square matrix $A$ is symmetric if $A^T = A$, i.e., if transposing the matrix gives the matrix back. Suppose that $A$ is a known matrix with real numbers. If $\boldsymbol{x}$ is a vector of variables with length $p$ (a $p\times 1$ matrix), then $x^T A x$ is called a \index{Quadratic form} quadratic form in $x$ ($x^T A x$  will be a scalar, $1\times 1$). If $x^TAx>0$ for all $x$, then $A$ is a \index{Positive definite matrix} positive definite matrix. If  $x^TAx\geq 0$ for all $x\neq0$, then $A$ is positive semi-definite.
+
+We encountered correlation matrices first in chapter 1. A correlation matrix is always symmetric, has ones along the diagonal, and real values ranging between $-1$ and $1$ on the off-diagonals. Given a \index{Correlation matrix} correlation matrix $\boldsymbol{\rho_u}$, we can decompose it into a \index{Lower triangular matrix} lower triangular matrix $\mathbf{L_u}$ such that $\mathbf{L_u}\mathbf{L_u}^T=\boldsymbol{\rho_u}$. The matrix $\mathbf{L_u}$ is called the \index{Cholesky factor} Cholesky factor of $\boldsymbol{\rho_u}$. Intuitively, you can think of $L_u$ as the matrix equivalent of the square root of $\boldsymbol{\rho_u}$. 
+
+\begin{equation}
+\mathbf{L_u}  =
+{\begin{pmatrix} 
+L_{11} & 0 \\ 
+L_{21}  & L_{22}
+\end{pmatrix}}
+\end{equation}
+
+
+For a model without a correlation between adjustments for the intercept and slope, we assumed that adjustments $u_{1}$ and $u_{2}$ were generated by two independent normal distributions. But now we want to allow the possibility that the adjustments can have a non-zero correlation. We can use the Cholesky factorization to generate \index{Correlated random variables} correlated random variables in the following way.
+
+1.  Generate uncorrelated vectors, $z_{u_1}$ and $z_{u_2}$, for each vector of
+    adjustments $u_1$ and $u_2$, as sampled from $\mathit{Normal}(0,1)$:
+
+  $$z_{u_1} \sim \mathit{Normal}(0,1)$$
+  $$z_{u_2} \sim \mathit{Normal}(0,1)$$
+
+2. By multiplying the Cholesky factor with the $z$'s, generate a matrix that contains two row vectors of correlated variables (with standard deviation $1$).
+
+
+  $$
+  \mathbf{L_u}\cdot \mathbf{z_u}  =
+  {\begin{pmatrix} 
+  L_{11} & 0 \\ 
+  L_{21}  & L_{22}
+  \end{pmatrix}}
+  {\begin{pmatrix}
+  z_{u_{1,subj=1}} & z_{u_{1,subj=2}} & ... & z_{u_{1,subj=N_{subj}}} \\
+  z_{u_{2,subj=1}} & z_{u_{2,subj=2}} & ... & z_{u_{2,subj=N_{subj}}}
+  \end{pmatrix}}
+  $$
+
+
+  $$
+  \mathbf{L_u}\cdot \mathbf{z_u}  =
+  {\begin{pmatrix}
+  L_{11} \cdot z_{u_{1,1}} + 0 \cdot z_{u_{2,1}} &   ... & L_{11} \cdot z_{u_{1,N_{subj}}} \\
+  L_{21} \cdot z_{u_{1,1}} + L_{22} \cdot z_{u_{2,1}} & ... & L_{11} \cdot z_{u_{1,N_{subj}}} + L_{22} \cdot z_{u_{2,N_{subj}}}
+  \end{pmatrix}}
+  $$
+
+   A very informal explanation of why this works is that we are making the
+variable that corresponds to the slope to be a function of a scaled version of
+the intercept.
+
+3. The last step is to scale the previous matrix to the desired standard deviation. We define the diagonalized matrix \index{$diag\_matrix$} $diag\_matrix(\tau_u)$ as before:
+
+  $$
+  {\begin{pmatrix} 
+  \tau_{u_1} & 0 \\ 
+  0  & \tau_{u_2}
+  \end{pmatrix}}
+  $$
+
+   Then pre-multiply it by the correlated variables with standard deviation 1 from before:
+
+  $$\mathbf{u} = diag\_matrix(\tau_u) \cdot \mathbf{L_u}\cdot \mathbf{z_u} = $$
+
+  $$ 
+  {\begin{pmatrix} 
+  \tau_{u_1} & 0 \\ 
+  0  & \tau_{u_2}
+  \end{pmatrix}}
+  {\begin{pmatrix}
+  L_{11} \cdot z_{u_{1,1}}  & ...  \\
+  L_{21} \cdot z_{u_{1,1}} + L_{22} \cdot z_{u_{2,1}} & ... 
+  \end{pmatrix}}
+  $$
+
+  $$ 
+  {\begin{pmatrix}
+  \tau_{u_1} \cdot L_{11} \cdot z_{u_{1,1}}  & \tau_{u_1} \cdot L_{11} \cdot  z_{u_{1,2}} & ...  \\
+  \tau_{u_2} \cdot (L_{21} \cdot z_{u_{1,1}} + L_{22} \cdot z_{u_{2,1}}) & \tau_{u_2} \cdot (L_{21} \cdot  z_{u_{1,2}} + L_{22} \cdot z_{u_{2,2}}) & ... 
+  \end{pmatrix}}
+  $$
+
+## Cholesky factorization in R
+
+Let's assume a correlation of $0.8$.
+
+```{r}
+rho <- 0.8
+# Correlation matrix
+(rho_u <- matrix(c(1, rho, rho, 1), ncol = 2))
+
+# Cholesky factor:
+# (Transpose it so that it looks the same as in Stan)
+(L_u <- t(chol(rho_u)))
+# Verify that we recover rho_u,
+# Recall that %*% indicates matrix multiplication
+L_u %*% t(L_u)
+```
+
+1. Generate uncorrelated z from a standard normal distribution assuming only 10 subjects.
+
+```{r, R.options = list(width = 60)}
+N_subj <- 10
+(z_u1 <- rnorm(N_subj, 0, 1))
+(z_u2 <- rnorm(N_subj, 0, 1))
+```
+
+2. Create matrix of correlated parameters.
+  
+First, create a matrix with the uncorrelated parameters:   
+   
+```{r, R.options = list(width = 60)}
+# matrix z_u
+(z_u <- matrix(c(z_u1, z_u2), ncol = N_subj, byrow = TRUE))
+```
+
+Then, generate correlated parameters by pre-multiplying the $\mathbf{z}_u$ matrix with $\mathbf{L}_u$.
+
+```{r}
+L_u %*% z_u
+```
+
+3. Use the following diagonal matrix to scale the z_u.
+
+```{r, R.options = list(width = 60)}
+tau_u1 <- 0.2
+tau_u2 <- 0.01
+(diag_matrix_tau <- diag(c(tau_u1,  tau_u2)))
+```
+
+4. Finally, generate the adjustments for each subject u:
+
+```{r, R.options = list(width = 60)}
+(u <- diag_matrix_tau %*% L_u %*% z_u)
+
+# The rows are correlated, approximately 0.8
+cor(u[1, ], u[2, ])
+
+# The variance components can be recovered as well:
+sd(u[1, ])
+sd(u[2, ])
+```
+
+## Application of the Cholesky factorization in Stan
+
+The reparameterization of the model, which allows for a correlation between adjustments for the intercepts and slopes, in `hierarchical_corr2.stan` is shown below. 
+The code implements the following new types and functions:
+
+* \index{\texttt{cholesky\_factor\_corr}} `cholesky_factor_corr[2] L_u`, which defines `L_u` as a lower triangular ($2 \times 2$)
+  matrix which has to be the \index{Cholesky factor} Cholesky factor of a correlation. 
+* \index{\texttt{diag\_pre\_multiply}} `diag_pre_multiply(tau_u,L_u)` which makes a diagonal matrix out of
+  the vector `tau_u` and multiplies it by `L_u`.
+* \index{\texttt{to\_vector}} `to_vector(z_u)` makes a long vector out the matrix `z_u`.
+* \index{\texttt{lkj\_corr\_cholesky}} `L_u ~ lkj_corr_cholesky(2)` is the Cholesky factor associated with the \index{LKJ
+  correlation distribution} LKJ
+  correlation distribution. It implies that `L_u * L_u' ~ lkj_corr(2.0)`. The symbol `'` indicates transposition (in R, this is the function `t()`).
+
+
+```{stan output.var = "hierarchical_corr2_stan", code = readLines(hierarchical_corr2),  tidy = TRUE, comment="", eval = FALSE, cache = FALSE, cache.lazy = FALSE} 
+```
+
+In this Stan model, we also defined an `effect_by_subject` in the generated quantities. This would allow us to plot or to summarize by-subject effects of cloze probability. This is very useful when studying individual differences.^[For an example, see: Himanshu Yadav, Dario Paape, Garrett Smith, Brian W. Dillon, and Shravan Vasishth. Individual differences in cue weighting in sentence comprehension: An evaluation using Approximate Bayesian Computation. Open Mind, 2022.]
+
+One can recover the \index{Correlation parameter} correlation parameter by adding in the `generated quantities` section code to extract one element of the $2 \times 2$ correlation matrix.  The correlation matrix is recovered with `L_u * L_u'`, and then `[1, 2]` extracts the element in the first row and second column (recall that the diagonal is filled with ones).
+
+Fit the new model:
+
+```{r hiercorr2, message=FALSE, results="hide", cache=TRUE}
+hierarchical_corr2 <- system.file("stan_models",
+                                  "hierarchical_corr2.stan",
+                                  package = "bcogsci")
+fit_eeg_corr2 <- stan(hierarchical_corr2, data = ls_eeg)
+```
+
+The Cholesky matrix has some elements which are always zero or one, and thus the variance within and between chains (and therefore Rhat) are not defined. However, the rest of the parameters of the model have an appropriate number of effective sample size (more than 10% of the total number of post-warmup samples),  Rhats are close to one, and the chains are mixing well; see also the traceplots in Figure \ref{fig:traceploteegcorr2}.
+
+```{r}
+print(fit_eeg_corr2,
+      pars =
+        c("alpha", "beta", "tau_u", "rho_u", "sigma", "L_u")) 
+```
+
+
+```{r traceploteegcorr2, fig.cap ="Traceplots of `alpha`, `beta`, `tau\\_u`, `L\\_u`, and `sigma` from the model `fit\\_eeg\\_corr`.", fold = TRUE,fig.margin=TRUE}
+traceplot(fit_eeg_corr2,
+          pars = c("alpha", "beta", "tau_u", "L_u[2,1]", "L_u[2,2]", "sigma")) 
+```
+
+Is there a correlation between the by-subject intercept and slope?
+
+Let's visualize some of the posteriors with the following code (see Figure \ref{fig:posteegcorr2}):
+
+ 
+
+```{r posteegcorr2, fig.height=2, message=FALSE, fig.cap ="Histograms of the samples of the posteriors of `beta` and `rho\\_u` from the model `fit\\_eeg\\_corr2`.",fig.margin=TRUE}
+mcmc_hist(as.data.frame(fit_eeg_corr2),
+          pars = c("beta", "rho_u")) 
+```
+
+Figure \ref{fig:posteegcorr2} shows that the posterior distribution is widely spread out between $-1$ and $+1$. One can't really learn from these data whether the by-subject intercepts and slopes are correlated. The broad spread of the posterior indicates that we don't have enough data to estimate this parameter with high enough precision: the posterior is basically just reflecting the prior specification (the LKJcorr prior with parameter $\eta = 2$).
+
+
+# By-subject and by-items correlated varying intercept varying slopes model
+
+We extend the previous model by adding by-items intercepts and slopes, and priors and hyperpriors that reflect the potential correlation between \index{By-items adjustment} by-items adjustments to intercepts and slopes:
+
+ \begin{multline}
+  signal_n \sim \mathit{Normal}(\alpha + u_{subj[n], 1} + w_{item[n], 1} + \\
+  c\_cloze_n \cdot  (\beta + u_{subj[n],2} + w_{item[n], 2}),\sigma)
+\end{multline}
+ 
+
+The correlation is indicated in the  priors on the adjustments for the vectors representing the varying intercepts $u_{1}$ and varying slopes $u_{2}$ for subjects, and the varying intercepts $w_{1}$ and varying slopes $w_{2}$ for items. 
+
+* Priors:
+ \begin{equation}
+ \begin{aligned} 
+   \alpha & \sim \mathit{Normal}(0,10) \\
+   \beta  & \sim \mathit{Normal}(0,10) \\
+    \sigma  &\sim \mathit{Normal}_+(0, 50)\\
+      {\begin{pmatrix}
+    u_{i,1} \\
+    u_{i,2}
+    \end{pmatrix}}
+   &\sim {\mathcal {N}}
+    \left(
+   {\begin{pmatrix} 
+    0\\
+    0
+   \end{pmatrix}}
+ ,\boldsymbol{\Sigma_u} \right) \\
+     {\begin{pmatrix}
+    w_{i,1} \\
+    w_{i,2}
+    \end{pmatrix}}
+   &\sim {\mathcal {N}}
+    \left(
+   {\begin{pmatrix} 
+    0\\
+    0
+   \end{pmatrix}}
+ ,\boldsymbol{\Sigma_w} \right)
+ \end{aligned}
+ \end{equation}
+
+
+
+\begin{equation}
+\boldsymbol{\Sigma_u} = 
+{\begin{pmatrix} 
+\tau_{u_1}^2 & \rho_u \tau_{u_1} \tau_{u_2} \\ 
+\rho_u \tau_{u_1} \tau_{u_1} & \tau_{u_2}^2
+\end{pmatrix}}
+\end{equation}
+
+\begin{equation}
+\boldsymbol{\Sigma_w} = 
+{\begin{pmatrix} 
+\tau_{w_1}^2 & \rho_w \tau_{w_1} \tau_{w_2} \\ 
+\rho_w \tau_{w_1} \tau_{w_1} & \tau_{w_2}^2
+\end{pmatrix}}
+\end{equation}
+
+
+
+\begin{equation}
+\begin{aligned}
+\tau_{u_1} &\sim \mathit{Normal}_+(0,20)\\
+\tau_{u_2} &\sim \mathit{Normal}_+(0,20)\\
+\rho_u &\sim \mathit{LKJcorr}(2) 
+\end{aligned}
+\end{equation}
+
+\begin{equation}
+\begin{aligned}
+\tau_{w_1} &\sim \mathit{Normal}_+(0,20)\\
+\tau_{w_2} &\sim \mathit{Normal}_+(0,20)\\
+\rho_w &\sim \mathit{LKJcorr}(2) 
+\end{aligned}
+\end{equation}
+
+The translation to Stan (`hierarchical_corr_by.stan`) looks as follows:
+
+```{stan output.var = "hierarchical_corr_stan", code = readLines(hierarchical_corr_by),  tidy = TRUE, comment="", eval = FALSE, cache = FALSE, cache.lazy = FALSE} 
+```
+
+Add item as a number to the data and store it in a list:
+
+```{r}
+df_eeg <- df_eeg %>%
+  mutate(item = as.numeric(as.factor(item)))
+ls_eeg <- list(
+  N = nrow(df_eeg),
+  signal = df_eeg$n400,
+  c_cloze = df_eeg$c_cloze,
+  subj = df_eeg$subj,
+  item = df_eeg$item,
+  N_subj = max(df_eeg$subj),
+  N_item = max(df_eeg$item))
+```
+
+Fit the model:
+
+```{r eegcorrby, message=FALSE, results="hide",cache=TRUE}
+hierarchical_corr_by <- system.file("stan_models",
+                                    "hierarchical_corr_by.stan",
+                                    package = "bcogsci")
+fit_eeg_corr_by <- stan(hierarchical_corr_by, data = ls_eeg)
+```
+
+# Custom distributions in Stan
+
+Stan includes a large number of distributions, but what happens if we need a distribution that is not provided? In many cases, we can simply build a custom distribution by combining the ever-growing number of functions available in the Stan language.
+
+## A change of variables with the reciprocal normal distribution 
+
+In previous chapters, when faced with response times, we assumed a log-normal distribution. The log-normal distribution moves the inferences relating to the location parameter into a multiplicative frame. Another alternative, however, is to assume a  "reciprocal"-normal distribution of response times. This is referred to hereafter as rec-normal in the text, and as the  $\mathit{RecNormal}$ distribution in equations. That is, we may want to assume that the reciprocal of the response times are normally distributed. This assumption may be theoretically motivated or it may arise from the application of the Box-Cox variance stabilizing transform procedure. 
+
+
+\begin{equation}
+\begin{aligned}
+1/y &\sim \mathit{Normal}(\mu, \sigma) \\
+y &\sim \mathit{RecNormal}(\mu, \sigma)
+\end{aligned}
+(\#eq:recip)
+\end{equation}
+ 
+An interesting aspect of the \index{Reciprocal-normal distribution} rec-normal is that it affords an interpretation of the location parameter in terms of \index{Rate} rate or speed rather than time. Analogously to the case of the log-normal, neither the location $\mu$ nor the scale $\sigma$ are  in the same scale as the dependent variable $y$. These parameters are in the same scale as the transformed dependent variable (here, $1/y$) that is assumed to be normally distributed. 
+
+By setting $\mu = 0.002$ and $\sigma = 0.0004$,  data can be generated from the rec-normal that looks right-skewed and not unlike a distribution of response times. The code below shows some summary statistics of the generated data. 
+
+```{r}
+N <- 100
+mu <- 0.002
+sigma <- 0.0004
+rt <- 1 / rnorm(N, mu, sigma)
+c(mean(rt), sd(rt), min(rt), max(rt))
+```
+
+Figure \ref{fig:recnormalhist} shows the distribution generated with the code shown above.
+
+```{r recnormalhist, echo = FALSE, fig.cap = "Distribution of synthetic data with a rec-normal distribution with parameters mu = 0.002 and sigma =0.0004.", message = FALSE, fig.margin=TRUE}
+ggplot(tibble(rt = rt), aes(rt)) +
+  geom_histogram()
+```
+
+We can fit the rec-normal distribution to the response times in a simple model with a normal likelihood, by storing the reciprocal of the \index{Response time} response times (`1/RT`) in the vector variable `recRT` (rather than storing the "raw" response times):
+
+
+```
+model {
+\\ priors go here
+target += normal_lpdf(recRT | mu, sigma); 
+}
+```
+
+One issue here is that the parameters of the likelihood, `mu` and `sigma` are going to be very far away from the \index{Unit scale} unit scale ($0.002$ and $0.0004$ respectively). Due to the way Stan's sampler is built, parameters that are too small (much smaller than 1) or too large (much larger than 1) can cause convergence problems. A straightforward solution is to fit the normal distribution to parameters in reciprocal of seconds rather than milliseconds; this would make the parameters have values that are $1000$ times larger ($2$ and $0.4$ respectively). We can do this using the \index{transformed parameters} `transformed parameters` block. Although we use `mu` and `sigma` to fit the data, the priors are defined on the parameters `mu_s` and `sigma_s` ($\mu_s$ and $\sigma_s$). 
+
+Unless one can rely on previous estimates, finding good priors for $\mu_s$ and $\sigma_s$ is not trivial. To define appropriate priors, we would need to start with relatively arbitrary priors, inspect the prior predictive distributions, adjust the priors, and repeat the inspection of prior predictive distributions until these distributions start to look realistic. In the interest of conserving space, we skip this iterative process here, and assign the following priors:
+
+
+\begin{equation}
+\begin{aligned}
+\mu_s & \sim  \mathit{Normal}(2, 1)\\
+\sigma_s & \sim \mathit{Normal}_+(0.4, 0.2)
+\end{aligned}
+\end{equation}
+
+```{r normalrectstore, echo = FALSE}
+normal_recrt <- system.file("stan_models",
+  "normal_recrt.stan",
+  package = "bcogsci"
+)
+```
+
+This model is implemented in the file `normal_recrt.stan`, available in the `bcogsci` package: 
+
+```{stan output.var = "normal_recrt", code = readLines(normal_recrt),  tidy = TRUE, comment="", eval = FALSE, cache = FALSE, cache.lazy = FALSE}
+```
+
+Fit and display the summary of the previous model:
+
+```{r normalrectrt, results = "hide", message = FALSE}
+normal_recrt <- system.file("stan_models",
+                            "normal_recrt.stan",
+                            package = "bcogsci")
+fit_rec <- stan(normal_recrt, data = list(N = N, recRT = 1 / rt))
+```
+
+```{r}
+print(fit_rec, pars = c("mu", "sigma"), digits = 4)
+```
+
+Is a rec-normal likelihood more appropriate than a log-normal likelihood? As things stand, we cannot compare the models with these two likelihoods. This is because the dependent variables are different: we cannot compare reciprocal response times with untransformed response times on the millisecond scale. \index{Model comparison} Model comparison with  the Bayes factor or cross-validation can only compare models with the same dependent variables; we discuss model comparison later.
+
+If we do want to compare the reciprocal-normal likelihood and the log-normal likelihood, we have to set up the models with the two likelihoods in such a way that the dependent measure is on the raw millisecond scale in each model. This means that for the reciprocal normal likelihood, the model will receive as data raw reading times in milliseconds, and these will be treated as a transformed random variable from reciprocal reading times. This approach is discussed next, but requires knowledge of the **Jacobian adjustment**.
+
+## Scaling a probability density with the Jacobian adjustment
+
+To work with the original dependent variable (`RT` rather than `1/RT`) we need to perform a \index{Change of variables} *change of variables*: If the random variable X represents the reciprocal reading times ($1/RT$), we can transform this random variable to a new one, $Y = 1/X = 1/(1/RT) = RT$, yielding a transformed random variable $Y$ which represents reading time. 
+
+This change of variables requires an adjustment to the (unnormalized log) posterior probability to account for the distortion caused by the transform.^[Not every transformation is valid, univariate changes of variables must be monotonic and differentiable, multivariate changes of variables must be surjective and differentiable.] The probability must be scaled by a \index{Jacobian adjustment} *Jacobian* adjustment, which, in the univariate case as this one, is the absolute value of the derivative of the transform.^[In the multivariate case, it is equal to the absolute determinant of the Jacobian, the matrix of all its first-order partial derivatives, of the transform; references in the book.] The absolute value of any number is represented by enclosing it in two vertical bars: e.g., $|-2| = 2$.
+
+\begin{equation}
+\begin{aligned}
+p(\mathit{RT}_n | \mu, \sigma )& = \mathit{Normal}(1/\mathit{RT}_n | \mu, \sigma) \left| \frac{d}{d\mathit{RT}_n} 1/\mathit{RT}_n \right| = \\
+& \mathit{Normal}(1/\mathit{RT}_n | \mu, \sigma) \cdot \left| - 1/\mathit{RT}_n^2 \right| = \\
+& \mathit{Normal}(1/\mathit{RT}_n | \mu, \sigma) \cdot  1/\mathit{RT}_n^2 
+ \end{aligned}
+\end{equation}
+
+If we omit the Jacobian adjustment, we are essentially fitting a different and unnormalized probability density function. The discrepancy between the correct and incorrect posterior would depend on how large the Jacobian adjustment for our model is.
+
+Because Stan works in log space, rather than multiplying the Jacobian adjustment, we add its logarithm to the log-probability density ($\log(1/\mathit{RT}_n^2) =  - 2 \cdot \log(\mathit{RT}_n)$). The contribution to the log likelihood (of $\mu$ and $\sigma$) with its adjustment based from an individual observation, $\mathit{RT}_{n}$,  would be as follows.
+
+
+\begin{equation}
+\log(\mathit{Normal}(1/\mathit{RT}_n | \mu, \sigma)) - 2 \cdot \log(\mathit{RT}_n) 
+\end{equation}
+
+We obtain the log likelihood based on all the $N$ observations  by summing the log likelihood of individual observations. 
+
+\begin{equation}
+\log \mathcal{L} = \sum_n^N \log(\mathit{Normal}(1/\mathit{RT}_n | \mu, \sigma))  - \sum_n^N 2 \cdot \log(\mathit{RT}_n) 
+\end{equation}
+
+
+In Stan, this summing up is done as follows. The function `normal_lpdf` applied to a vector already returns the sum of the individual log-probability densities. The Jacobian adjustment `2*log(RT)`, which returns a vector of values, has to be summed up and added in manually (the term therefore becomes `-sum(2*log(RT))`).
+
+```
+target += normal_lpdf(1 ./ RT | mu, sigma) 
+          - sum(2 * log(RT));
+```
+
+
+
+Before fitting the model with the change of variables, we are going to truncate the distribution.
+We didn't encounter negative values in our synthetic data, but this was because the distribution was not too spread out; that is, the scale was much smaller than the location ($\sigma << \mu$). However, in principle we could end up generating negative values. For this reason, we truncate the underlying normal distribution. The \index{Reciprocal truncated normal distribution} reciprocal truncated normal distribution has been argued to be an appropriate model of \index{Response time} response times, neural \index{Inter-spike interval} inter-spike intervals, and \index{Latency distributions of saccades} latency distributions of saccades in a simple optimality model in which reward is maximized to yield an optimal response rate.
+
+Because we have $N$ observations, the truncation consists of adding ` - N * normal_lccdf(0 | mu, sigma)` to `target`. The complete model, `recnormal_rt.stan`, including the truncation is as follows:
+
+```{r, echo = FALSE}
+recnormal_rt <- system.file("stan_models", "recnormal_rt.stan", package = "bcogsci")
+```
+
+```{stan output.var = "recnormal_rt", code = readLines(recnormal_rt),  tidy = TRUE, comment="", eval = FALSE, cache = FALSE, cache.lazy = FALSE}
+```
+
+Next, generate data from a reciprocal truncated normal distribution:
+
+```{r, echo = FALSE}
+set.seed(123)
+```
+```{r}
+N <- 100
+mu <- .002
+sigma <- .0004
+rt <- 1 / rtnorm(N, mu, sigma, a = 0) 
+```
+
+Fit the model to the data:
+
+```{r recnormalrt, results = "hide", message = FALSE, cache=TRUE}
+recnormal_rt <- system.file("stan_models",
+  "recnormal_rt.stan",
+  package = "bcogsci")
+fit_rec <- stan(recnormal_rt, data = list(N = N, RT = rt))
+```
+
+
+Print the posterior summary:
+
+```{r}
+print(fit_rec, pars = c("mu", "sigma"), digits = 4) 
+```
+
+We get the same results as before, but now we could potentially compare this model to one that assumes a log-normal likelihood, for example.
+
+An important question is the following: Does every transformation of a random variable require a Jacobian adjustment? Essentially, if we assign a distribution to a random variable and then transform it, this does not require a Jacobian adjustment.
+
+Alternatively, if we apply a transformation on a random variable first, and then assign a distribution to the transformed random variable afterwards, we have a \index{Change of variables} change of variables. This requires a Jacobian adjustment. This is the reason why `1 ./ RT` requires a Jacobian adjustment, but not `mu_s`, `mu`, `sigma_s`, or `sigma_s` in the previous model.
+
+As a last step, we can encapsulate our new distribution in a function, and also create a \index{Random number generator} random number generator function. This is done in a \index{Block} block called \index{\texttt{functions}} `functions`. To create a function, we need to specify the type of every argument and the type that the function returns.
+
+As a simple example, if we would like a function to center a vector, we would do it as follows:
+\index{\texttt{num\_elements}}
+
+```
+functions {
+  vector center(vector x) {
+    vector[num_elements(x)] centered;
+    centered = x - mean(x);
+    return centered;
+  }
+}
+data {
+...
+}
+parameters {
+...
+}
+model {
+...
+}
+```
+
+We want to create a log(PDF) function, similar to the native Stan functions that end in `_lpdf`. Our function will take as arguments a vector `RT`, and  real numbers `mu` and `sigma`. In `_lpdf`  functions, (some of) the arguments (e.g., `RT`, `mu`, and `sigma`) can be vectorized, but the output of the function is always a real number: the sum of the log(PDF) evaluated at every value of the random variable at the left of the pipe.  As we show below, to do that we just move the right hand side of `target` in our original model inside our new function.  See the section entitled Further Reading at the end of this chapter for more about Stan functions. 
+
+For our custom random number generator function (which should end with `_rng`), we have the added complication that the function is truncated. We simply generate random values from a normal distribution, do the reciprocal transformation and if the number is above zero, this number is returned; otherwise, a new number is drawn. 
+This implementation may be inefficient when rejections occur frequently. Another, more complex implementation using the inverse CDF approach can be found in section 20.10 of the Stan User's guide.
+
+The complete code can be found in `recnormal_rt_f.stan`, and is also shown below:
+
+```{r, echo = FALSE}
+recnormal_rt_f <- system.file("stan_models",
+  "recnormal_rt_f.stan",
+  package = "bcogsci")
+```
+
+```{stan output.var = "recnormal_rt_f", code = readLines(recnormal_rt_f),  tidy = TRUE, comment="", eval = FALSE, cache = FALSE, cache.lazy = FALSE}
+```
+
+Fit the model to the simulated data:
+
+```{r recnormal_rt_f, results = "hide", message = FALSE,cache=TRUE}
+recnormal_rt_f <- system.file("stan_models",
+                              "recnormal_rt_f.stan",
+                              package = "bcogsci")
+fit_rec_f <- stan(recnormal_rt_f, data = list(N = N, RT = rt))
+```
+
+Print the summary:
+
+```{r}
+print(fit_rec_f, pars = c("mu", "sigma"), digits = 4)
+```
+
+## \index{Validation of a computed posterior distribution} Validation of a computed posterior distribution
+
+The model converged, but did it work? At the very least we expect that the simulated data that we used to test the model shows similar distribution to  the posterior predictive distributions. This is because we are fitting the data with the same function that we use to generate the data. Figure \ref{fig:ppcheckrec} shows that the simulated data and the posterior predictive distributions are similar. 
+
+```{r ppcheckrec, message = FALSE, fig.cap = "A posterior predictive check  in comparison with the simulated data.", fold = TRUE,fig.margin=TRUE}
+ppc_dens_overlay(rt, yrep = extract(fit_rec_f)$rt_pred[1:500, ]) +
+  coord_cartesian(xlim = c(0, 2000))
+```
+
+Our synthetic data set was generated by first defining a \index{Ground truth} *ground truth* vector of parameters $[\mu; \sigma]$. We would expect that the true values of the parameters $\mu$ and $\sigma$ should be well inside the bulk of the posterior distribution of our model. We investigate this by plotting the true values of the parameters together with their posterior distributions using the function \index{\texttt{mcmc\_recover\_hist}} `mcmc_recover_hist` of `bayesplot` as shown below in Figure \ref{fig:recoveryrec}.
+
+```{r recoveryrec, message = FALSE, fig.cap = "Posterior distributions of the parameters together with their true values.",fig.margin=TRUE}
+post_rec <- as.data.frame(fit_rec_f)[,c(1,2)]
+
+mcmc_recover_hist(post_rec, true = c(mu, sigma))
+```
+
+Even though this approach can capture serious misspecifications in our models, it has three important  shortcomings. 
+
+First, it's unclear what we should conclude if the true value of a parameter is not in the bulk of its posterior distribution. Even in a well-specified model, if we inspect enough parameters we will find that for some parameters, the bulks of their respective marginal posterior distributions can be relatively far away from their true values.
+
+
+The second shortcoming is that if the posteriors that we obtain are very wide, it might not be clear what to consider the bulk of the posterior distribution that needs to be inspected. 
+
+The third shortcoming is that regardless of how a successful recovery of parameters is defined, we might be able to  recover a posterior based on  data generated from some parts of the parameter space, but not based on data generated from other parts of parameter space. However, inspecting the entire parameter space is infeasible.
+
+ 
+An alternative to our approach of plotting the true values of the parameters together with their posterior distributions is simulation-based calibration, but we will skip this topic in these lectures. See the textbook for details.
+
+Print the summary:
+
+```{r}
+print(fit_eeg_corr_by,
+      pars = c("alpha", "beta", "sigma", "tau_u", "tau_w", 
+               "rho_u", "rho_w")) 
+```
+
+The summary above shows that the data are far too sparse to get tight estimates of the correlation parameters `rho_u[1,2]` and `rho_w[1,2]`. Both posteriors are widely spread out. 
+
+This completes our review of hierarchical models and their implementation in Stan. The importance of coding a hierarchical model directly in Stan rather than using `brms` is that this increases the flexibility of the type of models that we can fit. In fact, we will see in later lectures that the same "machinery" can be used to have hierarchical parameters in cognitive models.
+
+

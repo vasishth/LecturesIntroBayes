@@ -1,0 +1,885 @@
+---
+title: "Chapter 11: Meta-analysis and measurement error models"
+runningheader: "Bayes 2" # only for pdf output
+subtitle: "Advanced inference and modeling using Bayesian methods" # only for html output
+author: "Shravan Vasishth"
+date: "`r Sys.Date()`"
+output:
+  tufte::tufte_handout: default
+  tufte::tufte_html:
+    citation_package: natbib
+    latex_engine: xelatex
+  tufte::tufte_book:
+    citation_package: natbib
+    latex_engine: xelatex
+bibliography: BayesCogSci.bib
+link-citations: no
+header-includes: |
+  \usepackage{tikz}
+  \usepackage{enumerate}
+  \usepackage[shortlabels]{enumitem}
+  \usepackage{amsmath}
+  \usepackage{comment}
+  \setcounter{secnumdepth}{4}
+---
+
+```{r include=FALSE}
+knitr::opts_chunk$set(fig.width=5, fig.height=3)
+library(ggplot2)
+theme_set(theme_bw())
+library(reshape2)
+library(dplyr)
+library(stats)
+library(brms)
+library(invgamma)
+library(TruncatedNormal)
+library(truncnorm)
+library(bayesplot)
+library(purrr)
+library(MASS)
+library(rstan)
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+library(bcogsci)
+library(extraDistr)
+library(tidyverse)
+## you will have to install this library first:
+library(metafor)
+
+short_summary <- function (x, digits = 2, ...) 
+{
+  x<- summary(x)
+  cat("...\n")
+    # cat(" Family: ")
+    # cat(summarise_families(x$formula), "\n")
+    # cat("  Links: ")
+    # cat(summarise_links(x$formula, wsp = 9), "\n")
+    # cat("Formula: ")
+    # print(x$formula, wsp = 9)
+    # cat(paste0("   Data: ", x$data_name, " (Number of observations: ", 
+        # x$nobs, ") \n"))
+    if (!isTRUE(nzchar(x$sampler))) {
+        cat("\nThe model does not contain posterior samples.\n")
+    }
+    else {
+        final_samples <- ceiling((x$iter - x$warmup)/x$thin * 
+            x$chains)
+        # cat(paste0("Samples: ", x$chains, " chains, each with iter = ", 
+        #     x$iter, "; warmup = ", x$warmup, "; thin = ", x$thin, 
+        #     ";\n", "         total post-warmup samples = ", final_samples, 
+        #     "\n\n"))
+        if (nrow(x$prior)) {
+            cat("Priors: \n")
+            print(x$prior, show_df = FALSE)
+            cat("\n")
+        }
+        if (length(x$splines)) {
+            cat("Smooth Terms: \n")
+            brms:::print_format(x$splines, digits)
+            cat("\n")
+        }
+        if (length(x$gp)) {
+            cat("Gaussian Process Terms: \n")
+            brms:::print_format(x$gp, digits)
+            cat("\n")
+        }
+        if (nrow(x$cor_pars)) {
+            cat("Correlation Structures:\n")
+            brms:::print_format(x$cor_pars, digits)
+            cat("\n")
+        }
+        if (length(x$random)) {
+            cat("Group-Level Effects: \n")
+            for (i in seq_along(x$random)) {
+                g <- names(x$random)[i]
+                cat(paste0("~", g, " (Number of levels: ", x$ngrps[[g]], 
+                  ") \n"))
+                brms:::print_format(x$random[[g]], digits)
+                cat("\n")
+            }
+        }
+        if (nrow(x$fixed)) {
+            cat("Population-Level Effects: \n")
+            brms:::print_format(x$fixed, digits)
+            cat("\n")
+        }
+        if (length(x$mo)) {
+            cat("Simplex Parameters: \n")
+            brms:::print_format(x$mo, digits)
+            cat("\n")
+        }
+        if (nrow(x$spec_pars)) {
+            cat("Family Specific Parameters: \n")
+            brms:::print_format(x$spec_pars, digits)
+            cat("\n")
+        }
+        if (length(x$rescor_pars)) {
+            cat("Residual Correlations: \n")
+            brms:::print_format(x$rescor, digits)
+            cat("\n")
+        }
+        # cat(paste0("Samples were drawn using ", x$sampler, ". "))
+        if (x$algorithm == "sampling") {
+            #cat(paste0("For each parameter, Bulk_ESS\n", "and Tail_ESS are effective sample size measures, ", 
+             #   "and Rhat is the potential\n", "scale reduction factor on split chains ", 
+              #  "(at convergence, Rhat = 1)."))
+        }
+        cat("...\n")
+    }
+    invisible(x)
+}
+```
+
+\tableofcontents
+
+\vspace{1cm}
+
+\clearpage
+
+\large
+
+Please also read chapter 11 of the textbook.
+
+# Introduction
+
+In this lecture, I introduce two relatively underutilized (in psychology and linguistics) models that are potentially very important for cognitive science: meta-analysis and  measurement-error models. These topics are also related to the hierarchical modeling introduced in chapter 5.
+
+Meta-analysis is commonly used in medicine; see for example:
+
+Chandler, J., Cumpston, M., Li, T., Page, M. J., & Welch, V. J. H. W. (2019). Cochrane handbook for systematic reviews of interventions. Hoboken: Wiley.
+
+Meta-analysis can be very informative when carrying out systematic reviews, and measurement-error models are able to take into account uncertainty in one's dependent or independent variable (or both). What's common to these two classes of model is that they both assume that the $n$-th measured data point  $y_n$  has an unknown true value of a parameter, say $\zeta_n$ (pronounced *zeta en*), that is measured with some uncertainty that can be represented by the standard error  $SE_n$ of the measurement $y_n$:
+
+\begin{equation}
+y_n \sim \mathit{Normal}(\zeta_n,SE_n)
+\end{equation}
+
+In both classes of model, the goal is to obtain a posterior distribution of a **latent parameter** $\zeta$ which is assumed to generate the $\zeta_n$, with some standard deviation $\tau$. The parameter $\tau$ quantifies the noise in the measurement process or the between-study variability in a meta-analysis.
+
+\begin{equation}
+\zeta_n \sim \mathit{Normal}(\zeta,\tau)
+\end{equation}
+
+The main parameter of interest is usually $\zeta$, but the posterior distributions of $\tau$ and $\zeta_n$ can also be informative. The above model specification should remind you of the hierarchical models we saw in earlier chapters, because this is exactly a varying intercepts model. There is an overall effect $\zeta$, and individual studies' estimates $\zeta_n$ vary about that overall effect, with standard deviation $\tau$.
+
+# Meta-analysis
+
+Once a number of studies have accumulated on a particular topic, it can be very informative to synthesize the data. Here is a commonly used approach--a random-effects meta-analysis. For other types of meta-analysis, see:
+
+Chen, D. G. D., & Peace, K. E. (2013). Applied meta-analysis with R. CRC Press.
+
+## A meta-analysis of similarity-based interference in sentence comprehension
+
+The model is set up as follows. For each study $n$, let effect$_n$ be the effect of interest, and let $SE_n$ be the \index{Standard error} standard error of the effect. A concrete example of a recent meta-analysis is the effect of \index{Similarity-based interference} similarity-based interference in sentence comprehension is Jäger et al 2017;^[Jäger, L. A., Engelmann, F., & Vasishth, S. (2017). Similarity-based interference in sentence comprehension: Literature review and Bayesian meta-analysis. Journal of Memory and Language, 94, 316-339.] when two nouns are more similar to each other, there is greater processing difficulty (i.e., longer \index{Reading time} reading times in milliseconds) when an attempt is made to retrieve one of the nouns to complete a linguistic dependency (such as a subject-verb dependency).  The estimate of the effect and its standard error is the information we have from each study $n$. 
+
+First, load the data, and add an id variable that identifies each experiment.
+
+
+```{r, message = FALSE}
+data("df_sbi")
+(df_sbi <- df_sbi %>%
+  mutate(study_id = 1:n()))
+```
+
+The effect size and standard errors were estimated from published summary statistics in the respective article. In some cases, this involved a certain amount of guesswork because authors don't always provide enough information to obtain the essential estimates (effect size and standard error); the details are documented in the online material accompanying the 2017 paper.^[See: https://shorturl.at/RhQV5]
+
+We begin with the assumption that  there  is a true (unknown) effect $\zeta_n$ that lies behind each of these studies. Each of the observed  effects has an uncertainty associated with it, $SE_n$. We can therefore assume that each observed effect, effect$_n$, is generated as follows:
+
+\begin{equation}
+\text{effect}_n \sim \mathit{Normal}(\zeta_n,SE_n)
+\end{equation}
+
+Each study is assumed to have a  different true effect $\zeta_n$ because each study will have been carried out under different conditions: in a different lab with different protocols and workflows, with different subjects, with different languages, with slightly different experimental designs, etc. 
+
+Further, each of the true  underlying effects $\zeta_n$ has behind it some true unknown value $\zeta$. The parameter  $\zeta$ represents the underlying effect of similarity-based interference across experiments. Our goal is to obtain the posterior distribution of this overall effect.
+
+We can write the above statement as follows:
+
+\begin{equation}
+\zeta_n \sim\mathit{Normal}(\zeta,\tau)
+\end{equation}
+
+$\tau$ is the between-study standard deviation; this expresses the assumption that there will be some variability between the true effects $\zeta_n$.
+
+To summarize the model:
+
+- effect$_n$ is the observed effect (in this example, in milliseconds) in the $n$-th study. 
+- $\zeta_n$ is the true (unknown) effect in each study.
+- $\zeta$ is the true (unknown) effect of the experimental manipulation, namely, the similarity-based interference effect. 
+- Each $SE_n$ is estimated from the standard error available from study $n$. 
+- The parameter $\tau$ represents \index{Between-study standard deviation} between-study standard deviation.
+
+We can construct a \index{Hierarchical model} hierarchical model as follows:
+
+\begin{equation} \label{eq:ma0}
+\begin{aligned}
+\text{effect}_n \sim & \mathit{Normal}(\zeta_n, SE_n) \quad n=1,\dots, N_{studies}\\
+\zeta_n \sim & \mathit{Normal}(\zeta, \tau) \\
+\zeta \sim & \mathit{Normal}(0,100)\\
+ \tau \sim & \mathit{Normal}_+(0,100) 
+\end{aligned}
+\end{equation}
+
+The priors are based on domain knowledge; it seems reasonable to allow the effect to range a priori from $-200$ to $+200$ ms with probability $95$%.  Of course, a sensitivity analysis is necessary (but skipped here).
+
+This model can be implemented in \index{brms} `brms` in a relatively straightforward way as shown below. We show the Stan version below; surprisingly for such a simple model, the Stan version presents some interesting challenges. 
+
+## `brms` version of the meta-analysis model
+
+First, define the priors:
+
+```{r}
+priors <- c(prior(normal(0, 100), class = Intercept),
+            prior(normal(0, 100), class = sd))
+```
+
+Fit the model as follows. Because of our relatively uninformative priors and the few data points, the models of this chapter require us to tune the `control` parameter, increasing \index{texttt{adapt\_delta}} `adapt_delta` and \index{\texttt{max\_treedepth}} `max_treedepth`.  
+
+```{r fitsbi, message = FALSE,results="hide",cache=TRUE}
+fit_sbi <- brm(effect | resp_se(`SE`, sigma = FALSE) ~ 1
+               + (1 | study_id),
+               data = df_sbi,
+               prior = priors,
+               control = list(
+                 adapt_delta = .99,
+                 max_treedepth = 10))
+```
+
+
+The posterior of $\zeta$ and $\tau$ are summarized below as `Intercept` and `sd(Intercept)`.
+
+
+```{r}
+short_summary(fit_sbi)
+```
+
+The `sigma` parameter does not play any role in this model, but appears in the `brms` output anyway. In the model specification, `sigma` was explicitly removed by writing `sigma = FALSE`. For this reason, we can ignore that parameter in the model summary output above. We explain below what happens if we set `sigma = TRUE`.
+
+As theory predicts, the overall effect from these studies has a positive sign.
+
+One advantage of such a meta-analysis  is that the posterior can now be used as  an informative prior for a future study. This is especially important when doing an analysis using Bayes factors. But this meta-analysis posterior could also be used as an informative prior in a future experiment; that would allow the researcher to build on what is known so far from published studies.
+
+For examples from my lab using informative priors from meta-analyses for Bayes factors analyses, see
+
+- Bruno Nicenboim, Shravan Vasishth, and Frank Rösler. Are words pre-activated probabilistically during sentence comprehension? Evidence from new data and a Bayesian random-effects meta-analysis using publicly available data. Neuropsychologia, 142, 2020. https://doi.org/10.1016/j.neuropsychologia.2020.107427
+
+- Pia Schoknecht, Himanshu Yadav, and Shravan Vasishth. Do syntactic and semantic similarity lead to interference effects? Evidence from self-paced reading and event-related potentials using German. Journal of Memory and Language, 2025. In Press. https://osf.io/preprints/psyarxiv/cwymg/
+
+## Meta-regression
+
+If one also has experimental data that manipulated a predictor or multiple predictors, one can include these in the meta-analysis; this is called a meta-regression.
+
+For example, if we include a predictor (continuous or factorial) in the model, one more parameter, $\beta$, is added into the model, which then requires a prior:
+
+\begin{equation} \label{eq:ma0}
+\begin{aligned}
+\text{effect}_n \sim & \mathit{Normal}(\zeta_n + \beta\times \hbox{predictor}_n, SE_n) \quad n=1,\dots, N_{studies}\\
+\zeta_n \sim & \mathit{Normal}(\zeta, \tau) \\
+\beta \sim & \mathit{Normal}(0,100)\\
+\zeta \sim & \mathit{Normal}(0,100)\\
+ \tau \sim & \mathit{Normal}_+(0,100) 
+\end{aligned}
+\end{equation}
+
+
+**Example: Meta-regression in agreement attraction**
+
+One research question that has been investigated in sentence processing is agreement attraction configurations like these:
+
+a. *The key to the cabinets are on the table.
+b. *The key to the cabinet are on the table.
+
+In these ungrammatical sentences, the noun in the prepositional phrase (cabinet/cabinets) intervenes between the subject (key) and the auxiliary verb (are). The noun in the distractor is often called a distractor, and the subject is called the target. This terminology arises because, in order to understand the sentence, we need to connect the subject to the verb, so key is the target for making this connection. The noun cabinet/cabinets is considered in some sentence processing theories as a source of interference--the reader finds it difficult to figure out whether the subject is key or cabinet/cabinets; that's why the noun cabinet/cabinets is called a distractor.
+
+Simplifying slightly, a theoretical claim in the literature is that reading time the auxiliary verb in condition a is faster than in a because in condition a, the distractor and verb have the same number marking; this number match is claimed to confuse readers and they end up thinking that sentence a is grammatical; this is called **agreement attraction**. The effect is expected to be negative.
+
+When the syntactic configuration is as shown above, target-distractor-verb, we say that this is a **retroactive** configuration. 
+
+It is also possible to have a configuration like distractor-target-verb. Examples:
+
+c. *The cabinets that the key are for seem to be very old.
+d. *The cabinet that the key are for seem to be very old.
+
+
+Here, the distractor (cabinets/cabinet) appears first, then the target (ket) and then the verb (are). This is called a **proactive** configuration.
+
+There is a theoretical claim in the literature that attraction effect is affected by whether the syntactic configuration is retroactive or proactive: the effect is expected to be larger when the distractor is closer to the verb (i.e., the retroactive configuration should have a more negative effect sign than proactive configuation). We can test this with existing data in a meta-regression (the data are from the Jäger et al 2017 paper).
+
+First, we load the data:
+
+```{r}
+mismatchagr<-read.table("data/MismatchAgreement.txt",header=TRUE)
+## means
+round(with(mismatchagr,tapply(Effect,IntType,mean)))
+```
+
+Descriptively, the proactive configuration has a **larger** effect (more negative effect) than the retroactive configuration--this goes against theory.
+
+Set up an appropriate contrast coding:
+
+```{r}
+## the meaning of the +/- 0.5 contrast coding:
+xtabs(~IntType+proretro,mismatchagr)
+```
+
+This coding implies that a negative sign on the $\beta$ parameter means that proactive configuration has a bigger (more negative effect).
+
+Next, isolate the relevant columns:
+
+```{r}
+## Isolate the relevant columns:
+mismatchagr<-mismatchagr[,c("Publication","Effect","SE","proretro")]
+str(mismatchagr)
+```
+
+Fit the model:
+
+```{r results="asis",message=FALSE,include=FALSE}
+priors <- c(prior(normal(0, 100), class = Intercept),
+            prior(normal(0, 100), class = "b"),
+            prior(normal(0, 100), class = sd))
+
+fit_sbi_metareg <- brm(Effect | 
+                         resp_se(`SE`,sigma = FALSE) ~ 
+                         1 + proretro + (1 | Publication),
+               data = mismatchagr,
+               prior = priors,
+               control = list(
+                 adapt_delta = .99,
+                 max_treedepth = 10))
+```
+
+The results:
+
+```{r}
+summary(fit_sbi_metareg)
+
+plot(fit_sbi_metareg,variable=c("b_Intercept","b_proretro","sd_Publication__Intercept"))
+```
+
+We do see an overall attraction effect (the intercept, corresponding to $\zeta$ in the mathematical statement of the model), but the pro-/retroactive configuration seems to have the opposite effect relative to what theory predicts, given these data. This surprising result may be due to the sparsity of the data at hand; there is also a lot of between-study variability.  Alternatively, the theoretical claim has been shown to be wrong, at least in these data.^[In fact, with more data, the expected pattern is seen. See the Jäger et al 2017 paper.]
+
+One could do a Bayes factor analysis to test the hypothesis formally. I will return to this point later in the course, as a formal Bayes factor analysis will give us more information about whether we can quantify the evidence for or against a theoretical prediction.
+
+## Aside: Frequentist version of the random-effect meta-analysis
+
+We could have fit a frequentist meta-analysis:
+
+```{r}
+## run the meta-analysis:
+m <- rma(yi=effect,
+         vi=SE^2,
+         method = "REML",
+         slab = df_sbi$study_id, 
+         data = df_sbi) 
+summary(m)
+```
+
+The estimated effect is close to the Bayesian estimate, but the confidence interval is a bit tighter in the frequentist model (this difference is due to the fact that the Bayesian model's prior specification for the effect influences the posterior).
+
+We can visualize the results of the frequentist meta-analysis using something called a forest plot (available in the metafor package):
+
+```{r fig.margin=FALSE,fig.height=5,fig.caption="The forest plot produced by the metafor package."}
+forest(m,xlab="Interference effect (ms)")
+```
+
+
+## Aside: What happens if we set `sigma = TRUE` in `brms`?
+
+If we set `sigma = TRUE`, we won't be able to get estimates for $\zeta_{n}$, since they are handled implicitly. The model presented formally in Equation \ref{eq:ma0} is equivalent to the following one in Equation \ref{eq:ma2}.  A critical difference is that $\zeta_n$ does not appear any more.
+
+\begin{equation}
+\begin{aligned} \label{eq:ma2}
+\text{effect}_n \sim &\mathit{Normal}(\zeta, \sqrt{\tau^2 + SE_n^2} )\\
+\zeta \sim &\mathit{Normal}(0,100)\\
+ \tau \sim &\mathit{Normal}_+(0,100) 
+\end{aligned}
+\end{equation}
+
+This works because of the following property of normally distributed random variables:
+
+If $X$ and $Y$ are two independent random variables, and
+
+\begin{equation}
+\begin{aligned}
+X &\sim \mathit{Normal}(\mu_X, \sigma_X)\\
+Y &\sim \mathit{Normal}(\mu_Y, \sigma_Y)
+\end{aligned}
+\end{equation}
+
+then, $Z$, the sum of these two random variables is:
+
+\begin{equation} \label{eq:Zsum0}
+Z = X + Y
+\end{equation}
+
+The distribution of $Z$ has the following form:
+
+\begin{equation} \label{eq:Zsum}
+Z \sim\mathit{Normal}\left(\mu_X + \mu_Y, \sqrt{\sigma_X^2 + \sigma_Y^2}\right)
+\end{equation}
+
+In our case, let
+
+\begin{equation}
+\begin{aligned}
+U_{n} &\sim \mathit{Normal}(0 , SE_n)\\
+\zeta_n &\sim \mathit{Normal}(\zeta, \tau)
+\end{aligned}
+\end{equation}
+
+Analogous to Equations \ref{eq:Zsum0} and \ref{eq:Zsum}, effect$_n$ can be expressed as a sum of two independent random variables:
+
+\begin{equation}
+\text{effect}_n =  U_n + \zeta_n 
+\end{equation}
+
+The distribution of effect$_n$ will be
+
+\begin{equation} \label{eq:ma2-again}
+\text{effect}_n \sim\mathit{Normal}\left(\zeta, \sqrt{SE^2 + \tau^2}\right) 
+\end{equation}
+
+We can fit this in `brms` as follows. In this model specification, one should not include the + `(1 | study_id)`, and the prior for $\tau$ should now be specified for \index{\texttt{sigma}} `sigma`.
+
+```{r sbisigma ,message = FALSE, results="hide",cache=TRUE}
+priors2 <- c(prior(normal(0, 100), class = Intercept),
+             prior(normal(0, 100), class = sigma))
+fit_sbi_sigma <- brm(effect | resp_se(`SE`, sigma = TRUE) ~ 1,
+                     data = df_sbi,
+                     prior = priors2,
+                     control = list(
+                       adapt_delta = .99,
+                       max_treedepth = 10))
+```
+
+There are slight differences with `fit_sbi` due to the different parameterization and the sampling process, but the results are very similar:
+
+```{r, eval = TRUE}
+posterior_summary(fit_sbi_sigma,
+  variable = c("b_Intercept", "sigma"))
+```
+
+If we are not interested in the underlying effects in each study, this parameterization of the meta-analysis can be faster and more robust (i.e., it has less potential convergence issues). A major drawback is that we can no longer display a forest plot as we do in Figure \ref{fig:forest}.
+
+## Back to meta-analysis: Forest plots
+
+Another interesting by-product of a random-effects meta-analysis is the possibility of displaying a \index{Forest plot} forest plot (Figure \ref{fig:forest}). A forest plot shows the meta-analytic estimate (the parameter `b_Intercept` in `brms`) alongside the original estimates effect$_n$ (and their SE$_n$) and the posterior distributions of the $\zeta_n$ for each study (we reconstruct these estimates by adding `b_Intercept` to the parameters starting with `r_` in `brms`). The original estimates are the ones fed to the model as data and the posterior distributions of the $\zeta_n$ are calculated, as in previous hierarchical models, after the information from all studies is pooled together. The  $\zeta_n$ estimates are shrunken estimates of each study's (unknown) true effect, shrunken towards the grand mean $\zeta$, and weighted by the standard error observed in each study $n$. The $\zeta_n$ for a particular study is shrunk more towards the grand mean $\zeta$ when the study's standard error is large (i.e., when the estimate is very imprecise). The code below shows how to build a forest plot step by step.
+
+First, change the format of the data so that it looks like the output of `brms`:
+
+```{r}
+df_sbi <- df_sbi %>%
+  mutate(Q2.5 = effect - 2 * SE,
+         Q97.5 = effect + 2 * SE,
+         Estimate = effect,
+         type = "original")
+```
+
+Extract the meta-analytical estimate:
+
+```{r}
+df_Intercept <- posterior_summary(fit_sbi,
+  variable = c("b_Intercept")
+) %>%
+  as.data.frame() %>%
+  mutate(publication = "M.A. estimate", type = "")
+```
+
+For the pooled estimated effect (or fitted value) of the individual studies, we need the sum of the  meta-analytical estimate (intercept) and each of the by-study adjustment. Obtain this with the `fitted()` function: 
+
+```{r}
+df_model <- fitted(fit_sbi) %>%
+  # Convert matrix to data frame:
+  as.data.frame() %>%
+  # Add a column to identify the estimates,
+  # and another column to identify the publication:
+  mutate(type = "adjusted",
+         publication = df_sbi$publication)
+```
+
+
+Bind the observed effects, the meta-analytical estimate, and the fitted values of the studies together, and plot the data.
+
+```{r forest, fig.cap = "Forest plot showing the original and the adjusted estimates computed from each study from the random-effects meta-analysis. The error bars on the original estimates show 95% confidence intervals, and those on the adjusted estimates show 95% credible intervals.",fig.margin=FALSE}
+# the adjusted estimates and the meta-analysis estimate:
+bind_rows(df_sbi, df_model, df_Intercept) %>%
+  # Plot:
+  ggplot(aes(x = Estimate,
+             y = publication,
+             xmin = Q2.5,
+             xmax = Q97.5,
+             color = type)) +
+  geom_point(position = position_dodge(.5)) +
+  geom_errorbarh(position = position_dodge(.5)) +
+  # Add the meta-analytic estimate and Credible Interval:
+  geom_vline(xintercept = df_Intercept$Q2.5,
+             linetype = "dashed",
+             alpha = .3) +
+  geom_vline(xintercept = df_Intercept$Q97.5,
+             linetype = "dashed",
+             alpha = .3) +
+  geom_vline(xintercept = df_Intercept$Estimate,
+             linetype = "dashed",
+             alpha = .5) +
+  scale_color_discrete(breaks = c("adjusted", "original"))
+```
+
+It is important to keep in mind that a meta-analysis is always going to yield  \index{Biased estimate} biased estimates as long as we have \index{Publication bias} publication bias: if a field has a tendency to allow only "big news" studies to be published, then the literature that will appear in the public domain will be biased, and any meta-analysis based on such information will be biased. Despite this limitation, a meta-analysis is still a useful way to synthesize the known evidence; one just has to remember that the estimate from the meta-analysis is almost certain to be biased. 
+
+## Stan version of the meta-analysis model
+
+Even though `brms` can handle meta-analyses, fitting them in Stan allows us for more flexibility, which might be necessary in some cases. As a first attempt we could build a model that closely follows the formal specification given in equation \ref{eq:ma0}.
+
+```{r, echo = FALSE}
+ma0 <- system.file("stan_models",
+  "meta-analysis0.stan",
+  package = "bcogsci"
+)
+```
+
+```{stan output.var = "ma0_stan", code = readLines(ma0),  tidy = TRUE, comment="", eval = FALSE, cache = FALSE, cache.lazy = FALSE} 
+```
+
+Fit the model as follows:
+
+```{r ma0stan, message=FALSE, results="hide",cache=TRUE}
+ma0 <- system.file("stan_models",
+  "meta-analysis0.stan",
+  package = "bcogsci"
+)
+ls_sbi <- list(N = nrow(df_sbi),
+               effect = df_sbi$effect,
+               SE = df_sbi$SE,
+               study_id = df_sbi$study_id)
+fit_sbi0 <- stan(ma0,
+                 data = ls_sbi,
+                 control = list(
+                   adapt_delta = .999,
+                   max_treedepth = 12))
+```
+
+We see that there are warnings. As discussed before, we can use pairs plots to uncover pathologies in the sampling. Here we see the samples of `zeta` and `tau` are highly correlated:
+
+```{r, warning = FALSE}
+pairs(fit_sbi0, pars = c("zeta", "tau"))
+```
+
+We face a similar problem as we faced earlier, namely, the sampler cannot properly explore the neck of the funnel-shaped space, because of the strong correlation between the parameters. The solution is a non-centered parameterization. Re-write Equation \ref{eq:ma0} as follows:  
+
+\begin{equation}
+\begin{aligned} \label{eq:ma1}
+z_n & \sim \mathit{Normal}(0, 1)\\
+\zeta_n &= z_n \cdot \tau + \zeta \\
+\text{effect}_n & \sim  \mathit{Normal}(\zeta_n, SE_n)\\ 
+\zeta &\sim \mathit{Normal}(0,100)\\
+\tau &\sim  \mathit{Normal}_+(0,100) 
+\end{aligned}
+\end{equation}
+
+This works because if $X \sim\mathit{Normal}(a, b)$ and $Y \sim \mathit{Normal}(0, 1)$, then $X = a + Y \cdot b$.  
+
+Translate equation \ref{eq:ma1} into Stan code as follows in `meta-analysis1.stan`:
+
+```{r, message = FALSE, results="hide",cache=TRUE}
+ma1 <- system.file("stan_models",
+  "meta-analysis1.stan",
+  package = "bcogsci")
+
+fit_sbi1 <- stan(ma1,
+                 data = ls_sbi,
+                 control = list(adapt_delta = .999,
+                                max_treedepth = 12))
+```
+
+```{stan output.var = "ma0_stan", code = readLines(ma1),  tidy = TRUE, comment="", eval = FALSE, cache = FALSE, cache.lazy = FALSE} 
+```
+
+
+The model converges with values virtually identical to the ones of the `brms` model.
+
+
+```{r}
+print(fit_sbi1, pars = c("zeta", "tau"))
+```
+
+
+We can also reparameterize the model slightly differently, if we set $U_{n} \sim\mathit{Normal}(0 , SE_n)$ then,
+
+\begin{equation}
+\text{effect}_n =  U_n + \zeta_n 
+\end{equation}
+
+Then, given that $\zeta_n \sim \mathit{Normal}(\zeta, \tau)$,
+
+\begin{equation} \label{eq:ma2-again2}
+\text{effect}_n \sim \mathit{Normal}(\zeta, \sqrt{SE^2 + \tau^2})
+\end{equation}
+
+See the aside above if it's not clear why this reparameterization works.
+
+This is equivalent to the `brms` model where `sigma = TRUE`. As with `brms`, we lose the possibility of estimating the posterior of the true effect of the individual studies.
+
+Write this in Stan as follows; this code is available in the file  `meta-analysis2.stan` within the `bcogsci` package:
+
+```{r, echo = FALSE}
+ma2 <- system.file("stan_models",
+  "meta-analysis2.stan",
+  package = "bcogsci")
+```
+
+```{stan output.var = "ma2_stan", code = readLines(ma2),  tidy = TRUE, comment="", eval = FALSE, cache = FALSE, cache.lazy = FALSE} 
+```
+
+Fit the model:
+
+```{r, message=FALSE, results="hide",cache=TRUE}
+ma2 <- system.file("stan_models",
+  "meta-analysis2.stan",
+  package = "bcogsci"
+)
+fit_sbi2 <- stan(ma2,
+                 data = ls_sbi,
+                 control = list(adapt_delta = .9))
+```
+
+```{r}
+print(fit_sbi2, pars = c("zeta", "tau"))
+```
+
+This summary could be reported in an article by displaying the posterior means and 95% credible intervals of the parameters.
+
+# \index{Measurement-error model} Measurement-error models
+
+Measurement error models deal with the situation where some predictor or the dependent variable, or both, are observed with measurement error. This measurement error could arise because a variable is an average (i.e., its standard error can also be estimated), or because we know that our measurement is noisy due to limitations of our equipment (e.g., delays in the signal from the keyboard to the motherboard, impedance in the electrodes in an EEG system, etc.).
+
+## Accounting for measurement error in individual differences in working memory capacity and reading fluency
+
+As a motivating example, consider the following data from Nicenboim et al 2018.
+For each subject, we have the partial-credit unit (PCU) scores of an operation span task as a  measure of their \index{Working memory capacity} working memory capacity  along with their \index{Standard error} standard error. In addition, the reading fluency of each subject is calculated from a separate set of data based on the mean reading speeds (character/second) in a \index{Rapid automatized naming task} rapid automatized naming task [RAN]; the standard error of the reading speed is also available. 
+
+Of interest here is the extent of the association between  working memory capacity (measured as PCU) and \index{Reading fluency} reading fluency (measured as reading speed in 50 characters per second). We avoid making any causal claims: It could be that  our measure of working memory capacity really affects reading fluency or it could be the other way around. A third possibility is that there is a third variable (or several) that affects both reading fluency and working memory capacity. A treatment of causality in Bayesian models can be found in chapters 5 and 6 of McElreath's book.
+
+```{r}
+data("df_indiv")
+df_indiv
+```
+
+At first glance, we see a relationship between mean PCU scores and mean reading speed; see Figure \ref{fig:relmeanVOTvdur}. However, this relationship seems to be driven by two extreme data points on the top left corner of the plot.
+
+```{r relmeanVOTvdur, fig.cap = "The relationship between (centered) mean PCU scores and mean reading speed.",  message = FALSE, fig.margin=FALSE}
+df_indiv <- df_indiv %>%
+  mutate(c_mean_pcu = mean_pcu - mean(mean_pcu))
+ggplot(df_indiv, aes(x = c_mean_pcu, y = mean_rspeed)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+
+A simple linear model shows a somewhat weak association between mean reading speed and centered mean PCU. The priors are relatively arbitrary but they are in the right order of magnitude given that reading speeds are quite short and well below 1.
+
+```{r votbrms, message = FALSE, results="hide",eval = TRUE,cache=TRUE}
+df_indiv <- df_indiv %>%
+  mutate(c_mean_pcu = mean_pcu - mean(mean_pcu))
+priors <- c(
+  prior(normal(0, 0.5), class = Intercept),
+  prior(normal(0, 0.5), class = b),
+  prior(normal(0, 0.5), class = sigma)
+)
+fit_indiv <- brm(mean_rspeed ~ c_mean_pcu,
+  data = df_indiv,
+  family = gaussian(),
+  prior = priors
+)
+```
+
+```{r, eval = FALSE}
+fit_indiv
+```
+
+```{r, echo = FALSE}
+short_summary(fit_indiv)
+```
+
+```{r}
+# Proportion of samples below zero
+(Pb <- mean(as_draws_df(fit_indiv)$b_c_mean_pcu < 0))
+```
+
+The frequentist equivalent:
+
+```{r}
+m_indiv_lm <- lm(mean_rspeed ~ c_mean_pcu,
+  data = df_indiv)
+summary(m_indiv_lm)
+```
+
+Figure \ref{fig:lmplotstanplot2} shows the posterior distribution of the slope in this model. Most of the probability mass is negative (`r Pb*100`%), suggesting that a better PCU score is associated with slower reading speed rather than faster;  that is, that a larger working memory capacity is associated with less reading fluency. This is not a very intuitive result and it could be the case that is driven by the two extreme data points. Rather than removing these data points, we'll examine what happens when the uncertainty of the measurements is taken into account. 
+
+
+```{r lmplotstanplot2, message = FALSE, eval = TRUE, fig.cap = "The posterior distribution of the slope in the linear model, modeling the effect of centered mean PCU on mean reading speed (the unit is 50 characters per second).", fold = TRUE}
+mcmc_plot(fit_indiv,
+          variable = "^b_c",
+          regex = TRUE,
+          type = "hist")
+```
+
+Taking this uncertainty of the measurement is important; in many practical research problems, researchers will often take average measurements like these and examine the correlation between them. However, each of those data points is being measured with some error (uncertainty), but this error is being ignored when we take the averaged values. Ignoring this uncertainty leads to over-enthusiastic inferences. A measurement-error model solves this issue by taking uncertainty into account. 
+
+The measurement error model is stated as follows. There is assumed to be a true unobserved value $y_{n,TRUE}$ for the dependent variable, and a true unobserved value $x_{n,TRUE}$ for the predictor, where $n$ is indexing the observation number. 
+The observed values $y_n$ and the predictor $x_n$ are assumed to be generated with some error:
+
+\begin{equation}
+\begin{aligned}
+y_n &\sim\mathit{Normal}(y_{n,TRUE},SE_y) \\
+x_n &\sim\mathit{Normal}(x_{n,TRUE},SE_x) 
+\end{aligned}
+\end{equation}
+
+The regression is fit to the (unknown) *true* values of the dependent and independent variables:
+
+\begin{equation}
+y_{n,TRUE} \sim\mathit{Normal}(\alpha + \beta x_{n,TRUE},\sigma)
+\end{equation}
+
+In addition, there is also an unknown standard deviation (standard error) of the latent unknown means that generate the underlying PCU means. I.e., we assume that each of the observed centered PCU scores are normally distributed with an underlying mean, $\chi$, and a standard deviation $\tau$. This is very similar to the meta-analysis situation we saw earlier: $\zeta_n \sim\mathit{Normal}(\zeta,\tau)$, where $\zeta_n$ was the true latent mean of each study, and $\zeta$ was the (unknown) true value of the parameter, and $\tau$ was the between-study variability.
+
+\begin{equation}
+x_{n,TRUE} \sim\mathit{Normal}(\chi,\tau)
+\end{equation}
+
+
+The goal of the modeling is to obtain posterior distributions for the intercept and slope $\alpha$ and $\beta$ (and the residual error standard deviation $\sigma$).
+
+We need to decide on priors for all the parameters now. We use relatively vague priors, which can still be considered regularizing priors based on our knowledge of the order of magnitude of the measurements. In situations where not much is known about a research question, one could use such vague priors.
+
+\begin{equation} \label{eq:me}
+\begin{aligned}
+\alpha &\sim\mathit{Normal}(0, 0.5)\\
+\beta &\sim\mathit{Normal}(0, 0.5)\\
+\chi &\sim\mathit{Normal}(0, 0.5)\\
+\sigma &\sim\mathit{Normal}_+(0, 0.5)\\
+\tau &\sim\mathit{Normal}_+(0, 0.5)
+\end{aligned}
+\end{equation}
+
+
+## The `brms` version of the measurement error model
+
+In `brms`, the model specification would be as follows:
+
+```{r}
+priors_me <- c(
+  prior(normal(0, 0.5), class = Intercept),
+  prior(normal(0, 0.5), class = b),
+  prior(normal(0, 0.5), class = meanme),
+  prior(normal(0, 0.5), class = sdme),
+  prior(normal(0, 0.5), class = sigma)
+)
+```
+
+Here the parameter with class \index{\texttt{meanme}} `meanme` and \index{\texttt{sdme}} `sdme` refer to the unknown mean and standard deviation (standard error) of the \index{Latent mean} latent unknown means that generate the underlying PCU means, $\chi$ and $\tau$ in \ref{eq:me}. Once we decide on the priors, we use \index{\texttt{resp\_se}} `resp_se(.)` with `sigma = TRUE` (i.e, we don't estimate $y_{n,TRUE}$ explicitly) and we use `me(c_meanpcu, se_pcu)` to indicate that the dependent variable `c_mean_pcu` is measured with error and `se_pcu` is its SE. 
+
+```{r fitmemodel ,message=FALSE, results = "hide",cache=TRUE}
+fit_indiv_me <- brm(mean_rspeed | resp_se(se_rspeed, sigma = TRUE) ~
+                      me(c_mean_pcu, se_pcu),
+                    data = df_indiv,
+                    family = gaussian(),
+                    prior = priors_me) 
+```
+
+
+
+```{r}
+short_summary(fit_indiv_me)
+```
+
+```{r}
+# Proportion of samples below zero
+# Parameter names can be found out with `variables(fit_indiv_me)`
+(Pb_me <- mean(as_draws_df(fit_indiv_me)$bsp_mec_mean_pcuse_pcu < 0))
+```
+
+
+
+The posterior for the slope is plotted in Figure \ref{fig:meplotstanplot}; this figure shows that the association between PCU scores and reading speed is much weaker once measurement error is taken into account: The posterior is much more uncertain (much more widely distributed) than in the simple linear model we fit above (compare Figure  \ref{fig:meplotstanplot} with Figure \ref{fig:lmplotstanplot2}), and the direction of the association is now unclear, with `r round(Pb_me *100)`% of the probability mass below zero, rather than `r round(Pb *100)`%.
+
+
+```{r meplotstanplot, echo=FALSE,message = FALSE,fig.cap = "The posterior distribution of the slope in the measurement error model, modeling the effect of centered mean PCU on mean reading speed.",fig.margin=FALSE}
+mcmc_plot(fit_indiv_me, variable = "^bsp", regex = TRUE, type = "hist")
+```
+
+Figure \ref{fig:seerrors} visualizes the main reason why we have no clear association in the measurement error analysis: the two points at the top left part of the plot that were driving the effect have very large SE for the measurement of reading speed. The code to produce it appears below and overlays several (250) regression lines that correspond to different samples of the posterior distribution with the measurements of reading speed and PCU.
+
+```{r seerrors, fig.cap = "The relationship between centered mean PCU scores and  mean reading speed accounting for measurement error. The error bars represent two standard errors. The regression lines are produced with 250 samples of the intercept and slope from the posterior distribution.",  message = FALSE, warning = FALSE,fig.margin=FALSE}
+df_reg <- as_draws_df(fit_indiv_me) %>%
+  dplyr::select(alpha = b_Intercept, beta = bsp_mec_mean_pcuse_pcu) %>%
+  slice(1:250)
+ggplot(df_indiv, aes(x = c_mean_pcu, y = mean_rspeed)) +
+  geom_point() +
+  geom_errorbarh(aes(xmin = c_mean_pcu - 2 * se_pcu,
+                     xmax = c_mean_pcu + 2 * se_pcu),
+                 alpha = .5, linetype = "dotted") +
+  geom_errorbar(aes(ymin = mean_rspeed - 2 * se_rspeed,
+                    ymax = mean_rspeed + 2 * se_rspeed),
+                alpha = .5, linetype = "dotted") +
+  geom_abline(aes(intercept = alpha, slope = beta),
+              data = df_reg,
+              alpha = .05)
+```
+
+
+Of course, the conclusion here cannot be that there is no association between PCU scores and reading speed. In order to claim an absence of an effect, we would need to use Bayes factor or cross validation. 
+
+## The Stan version of the measurement error model  {#sec-stanme}
+
+As it happened when we modeled the meta-analysis, the main difficulty for modeling measurement error models directly in Stan is that we need to reparameterize the models to avoid correlations between samples of different parameters. 
+The two changes that we need to do to the parameterization of our model presented in Equation \ref{eq:me} are the following.
+
+1. Sample from an auxiliary parameter $z_n$ rather than directly from $x_{n,TRUE}$, as we did in Equation \ref{eq:ma1}:
+
+\begin{equation}
+\begin{aligned}
+z_n & \sim\mathit{Normal}(0, 1)\\
+x_{n,TRUE} &= z_n \cdot \tau + \chi \\
+x_n & \sim \mathit{Normal}(x_{n,TRUE}, SE_x)
+\end{aligned}
+\end{equation}
+
+2. Don't model $y_{n,TRUE}$ explicitly; rather take into account the SE and the variation on $y_{n,TRUE}$ in the following way:
+
+\begin{equation}
+y_{n} \sim\mathit{Normal}\left(\alpha + \beta x_{n,TRUE},\sqrt{SE_y^2 + \sigma^2}\right)
+\end{equation}
+
+
+We are now ready to write this in Stan; the code is in the model called `me.stan`:
+
+```{r, echo = FALSE}
+me <- system.file("stan_models",
+  "me.stan",
+  package = "bcogsci")
+```
+
+```{stan output.var = "me_stan", code = readLines(me),  tidy = TRUE, comment="", eval = FALSE, cache = FALSE, cache.lazy = FALSE} 
+```
+
+Fit the model:
+
+```{r mestan, message=FALSE, results="hide", cache = TRUE}
+me <- system.file("stan_models",
+  "me.stan", package = "bcogsci")  
+ls_me <- list(N = nrow(df_indiv),
+              y = df_indiv$mean_rspeed,
+              SE_y = df_indiv$se_rspeed,
+              x = df_indiv$c_mean_pcu,
+              SE_x = df_indiv$se_pcu)
+fit_indiv_me_stan <- stan(me, data = ls_me)
+```
+
+```{r}
+print(fit_indiv_me_stan, pars = c("alpha", "beta", "sigma")) 
+```
+
+
+The posterior distributions are similar to those that we obtained with `brms`.
+
